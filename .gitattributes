@@ -1,0 +1,6 @@
+# Line endings are stored exactly as they are.
+#
+# MVave_SMC_PAD/ descends from a template that came off a Windows machine and is
+# CRLF throughout; everything else is LF. Python 3 reads both without complaint,
+# and letting git normalise would produce a whole-file diff for no benefit.
+* -text

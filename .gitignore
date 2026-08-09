@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# The probe builds its own virtualenv on first run
+tools/venv-midi/
+tools/venv/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp

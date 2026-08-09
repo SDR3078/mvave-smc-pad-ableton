@@ -1,0 +1,4 @@
+# Dependencies for mvave_probe.py, installed into venv-midi by run_probe.bat.
+# Kept separate from requirements.txt so the capture server's venv is untouched.
+mido==1.3.2
+python-rtmidi==1.5.8
