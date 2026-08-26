@@ -34,12 +34,16 @@ sends.
 |---|---|
 | 16 pads | notes **1–16**, reading order — top-left is 1, bottom-right is 16 — on the **third** port pair (the DAW port), velocity 127 on press and note-on velocity 0 on release |
 | Buttons | note **17** play, **18** stop, **19** record, **20** left arrow, **21** right arrow |
-| Encoders 1–6, knob bank 2 | CC **44, 45, 42, 43, 40, 41** (that order — the CC numbers do not follow the printed encoder numbers), absolute |
-| Encoders 7–8, knob bank 2 | CC **38, 39**, **relative**, centred on 64: 63 is one step back, 65 one step forward |
+| Encoders, knob bank 1 | CC **7, 8, 5, 6, 3, 4, 1, 2** across encoders 1–8 — the CC numbers do not follow the printed encoder numbers on this bank |
+| Encoders, knob bank 2 | CC **38–45** ascending across encoders 1–8 |
+| All sixteen | **relative**, centred on 64: 63 is one step back, 65 one step forward |
 
 This was measured on one unit whose pad bank and transport buttons had been
-configured by hand in the M-Vave editor, and whose two navigation encoders had
-been switched there from absolute to relative. **A factory unit will not match.**
+configured by hand in the M-Vave editor, and every one of whose sixteen encoder
+assignments had been switched there from absolute to relative. **A factory unit
+will not match**, and neither will this one after any further editor change — the
+encoder numbering has already moved once between measurements. Re-measure with
+`run_probe.bat --knobs` rather than trusting the table above.
 On the measured unit, the eight Shift+Pad presets transmitted note ranges
 1) 4–19, 2) 20–35, 3) 1–16 (the hand-edited one), 4) 52–67, 5) 68–83, 6) 84–99,
 7) 100–115, 8) 52–67.
@@ -150,16 +154,22 @@ this and Ctrl+M mapping from the encoders stops working entirely.
 If you already had Ctrl+M mappings arriving on port 1, assigning the knob script
 to that port kills them silently. Remake them on port 2.
 
-### 5. Put the device on knob bank 2
+### 5. Both knob banks are in use
 
-Press **KNOB BANK** until the device is on bank 2. The button switches all eight
-encoders at once and each bank has its own CC set — bank 1 sends CC 1–8, bank 2
-sends CC 38–45. **The scripts only listen to bank 2.** Bank 1 is deliberately
-left alone so its eight absolute encoders stay free for Ctrl+M on the port from
-step 4.
+**KNOB BANK** switches all eight encoders at once, and each bank has its own CC
+set. Both are now mapped, giving fourteen macros plus navigation:
 
-On knob bank 1 every encoder in this setup does nothing. That is the expected
-behaviour, not a fault.
+| Bank | Knobs | Do |
+|---|---|---|
+| 1 | 7, 8, 5, 6, 3, 4, 1, 2 | macros **1–8** |
+| 2 | 7, 8, 5, 6, 3, 4 | macros **9–14** |
+| 2 | 1, 2 | session box across tracks / through scenes |
+
+So there is no bank to select — press KNOB BANK for whichever half of the macros
+you want. Note that bank 1 is **no longer free for Ctrl+M**: the script claims
+CC 1–8, two of which (CC 1 and CC 7) are the mod wheel and channel volume. That
+is harmless while the port belongs to a Control Surface, since Live disables
+Remote on it, but it matters if you ever hand the port back.
 
 ---
 
@@ -174,16 +184,18 @@ behaviour, not a fault.
 Look for these lines, in this order:
 
 ```
-MVave_SMC_KNOBS: loaded. CC 38/39 navigate, CC 44,45,42,43,40,41 = macros 1-6.
-MVave_SMC_KNOBS: device component -> <device name>
+MVave_SMC_KNOBS: loaded. CC 38/39 navigate; 14 macro CCs 1,2,3,4,5,6,7,8,40,41,42,43,44,45.
+MVave_SMC_KNOBS: device -> <device name>
 MVave_SMC_KNOBS: first nav CC -- 38 value 65
+MVave_SMC_KNOBS: first macro CC -- 1 value 65 -> macro 1
 ```
 
 | Line | Proves | Appears when |
 |---|---|---|
 | `loaded.` | The knob script was found and constructed. | At startup. |
-| `device component -> …` | The macro knobs have a device to point at. | **Only once the selected track changes** — click a track before concluding the macros are broken. |
-| `first nav CC -- 38 value 65` | MIDI is actually reaching the script. | The first time you turn encoder 7 or 8. Logged once only; a knob produces hundreds of messages. |
+| `device -> …` | The macro knobs have a device to point at. | **Only once the selected track changes** — click a track before concluding the macros are broken. |
+| `first nav CC -- 38 value 65` | MIDI is actually reaching the script. | The first time you turn encoder 1 or 2 on bank 2. Logged once only; a knob produces hundreds of messages. |
+| `first macro CC -- …` | A macro knob is reaching the script and resolving to a macro number. | The first time you turn any macro encoder. Logged once only. |
 
 The **pad script prints nothing on a clean load** — its only log lines are
 warnings. Verify it by behaviour instead: pads under the red box should light
@@ -257,7 +269,7 @@ the Shift+Pad combos. There is no spare modifier on this device.
 
 Expected. `DeviceComponent` is only handed a device when the **selected track
 changes**, so after a fresh load the knobs do nothing until you click a track.
-Click any track once after starting Live. The `device component -> …` line in
+Click any track once after starting Live. The `device -> …` line in
 `Log.txt` appears at that same moment, which is why its absence at startup is
 not a fault.
 
@@ -362,13 +374,12 @@ tell apart in use, move `CLIP_STOPPED` to 21 or 24 for much more contrast.
 
 The encoder CCs are constants at the top:
 
-- `MACRO_CCS = (44, 45, 42, 43, 40, 41)` — in **encoder order**, left to right,
-  not numeric order. Listing them as 40…45 instead scatters the macros across the
-  panel. Flip the tuple to put macro 1 at the top of the six rather than the
-  bottom.
-- `PAD_CCS = (118, 119)` — filler, so the tuple is 8 long for `_Framework`
-  versions that assert on it. The device never sends these, so macros 7 and 8 are
-  unreachable by design. Don't point them at a real CC unless you mean it.
+- `MACRO_BY_CC` — a dict mapping each of the fourteen CCs to a macro number.
+  Macro *N* is `device.parameters[N]`; index 0 is the device on/off switch, so the
+  numbering needs no offset. Build it in **encoder order**, not numeric CC order,
+  or the macros scatter across the panel.
+- `STEPS_PER_SWEEP = 128.0` — one click moves this fraction of a parameter's
+  range. A rack macro is 0–127, so 128 clicks is exactly one full sweep.
 - `CC_TRACK = 38`, `CC_SCENE = 39`, `CENTRE = 64` — the relative navigation
   encoders.
 

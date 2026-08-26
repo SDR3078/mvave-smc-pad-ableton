@@ -19,9 +19,9 @@ anywhere else.
 | 16 pads | Launch clips in Session view, coloured by clip state |
 | Transport buttons | Play, stop, record |
 | `<` `>` | Select previous / next track |
-| Knob bank 2, encoders 1–6 | Macros 1–6 of the **selected** device — Live's "blue hand" |
-| Knob bank 2, encoders 7–8 | Move the session box across tracks and through scenes |
-| Knob bank 1 | Unassigned, left free for Live's own MIDI mapping |
+| Knob bank 1, all 8 encoders | Macros **1–8** of the **selected** device — Live's "blue hand" |
+| Knob bank 2, encoders 3–8 | Macros **9–14** of the same device |
+| Knob bank 2, encoders 1–2 | Move the session box across tracks and through scenes |
 
 Pad colours: green playing · orange loaded · red-pink recording · blue queued ·
 off empty.
@@ -62,7 +62,7 @@ port assignment, verification and troubleshooting in
 script with its own setup in **[docs/STEPSEQ.md](docs/STEPSEQ.md)**.
 
 > **Read the prerequisites first.** The note numbers in `MIDI_Map.py` come from a
-> pad bank that was configured by hand in the M-Vave editor, and two encoders
+> pad bank that was configured by hand in the M-Vave editor, and all sixteen encoder assignments
 > must be switched to relative mode. A factory unit sends different numbers and
 > will appear to do nothing until you either match the configuration or edit
 > `MIDI_Map.py`. `docs/INSTALL.md` covers both routes.
@@ -109,9 +109,10 @@ sequencer is written and self-tested but has **never run in Live** — see
 [STEPSEQ.md](docs/STEPSEQ.md) section 5 for the hardware questions it is still
 carrying. Known gaps, documented rather than hidden:
 
-- **Knob bank 1 is unassigned.** Eight free absolute encoders. Candidates: eight
-  track volumes via `MixerComponent`, all eight macros via a second
-  `DeviceComponent`, or leaving it for Live's own MIDI mapping.
+- **Both knob banks are now claimed**, so nothing is left for Live's own MIDI
+  mapping on that port. Bank 1 uses CC 1–8, two of which (CC 1, CC 7) are the mod
+  wheel and channel volume — harmless while the port belongs to a Control Surface,
+  since Live disables Remote on it, but a hazard if you ever hand the port back.
 - **Two latent bugs inherited from the template** — a `_do_uncombine()` guard
   that can never fire because `list.remove()` returns `None`, and `TSB_X`/`TSB_Y`
   swapped in two places. Harmless with a square grid and the current mapping;

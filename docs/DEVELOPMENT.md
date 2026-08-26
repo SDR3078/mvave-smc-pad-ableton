@@ -292,32 +292,42 @@ pad's note is swallowed before the session component sees it.
 | `MVave_SMC_KNOBS.py` | Everything: constants, the `ControlSurface` subclass, the relative-encoder decode, the cross-script session lookup. ~195 lines, no subcomponents. |
 
 Its constants sit at the top of the file rather than in a separate map, because
-there are eleven of them:
+there are only a handful:
 
 ```python
-CHANNEL   = 0
-MACRO_CCS = (44, 45, 42, 43, 40, 41)   # encoders 1-6 -> device parameters 1-6
-PAD_CCS   = (118, 119)                 # filler, see the gotchas section
-CC_TRACK  = 38                         # encoder 7, relative
-CC_SCENE  = 39                         # encoder 8, relative
-CENTRE    = 64
+CHANNEL  = 0
+CENTRE   = 64
+CC_TRACK = 38            # bank 2, encoder 1
+CC_SCENE = 39            # bank 2, encoder 2
+MACRO_BY_CC = {          # CC -> macro number, 1-based
+    1: 1,  2: 2,  3: 3,  4: 4,  5: 5,  6: 6,  7: 7,  8: 8,     # bank 1
+    44: 9, 45: 10, 42: 11, 43: 12, 40: 13, 41: 14,             # bank 2
+}
+STEPS_PER_SWEEP = 128.0  # one click = this fraction of a parameter's range
 ```
 
-**`MACRO_CCS` is in encoder order, not numeric order, and that is deliberate.**
-The device's knob bank 2 descends in pairs as the printed labels ascend: encoder 1
-sends CC 44, encoder 2 sends 45, encoder 3 sends 42, and so on down to encoders 7
-and 8 on 38 and 39. Listing the CCs as `(40, 41, 42, 43, 44, 45)` would compile
-fine and scatter macros 1–6 across the panel in the wrong physical order. Measured
-one encoder at a time with the probe tool; see [HARDWARE.md](HARDWARE.md).
+Macro *N* is `device.parameters[N]` — index 0 is the device on/off switch, so the
+numbering needs no offset arithmetic.
+
+**Build the map in encoder order, not numeric CC order.** On this device one bank
+always runs ascending with the printed labels while the other descends in pairs,
+and *which bank misbehaves has already swapped once* between measurements. Listing
+CCs numerically compiles fine and scatters the macros across the panel in a
+physical order that looks random under your hands. Measured one encoder at a time
+with the probe tool; see [HARDWARE.md](HARDWARE.md) §4, and re-measure after any
+change in the M-Vave editor rather than trusting a table.
 
 The class has four responsibilities, in four small blocks:
 
-1. `_setup_device_control()` — build eight `SliderElement`s, hand them to a
-   `DeviceComponent`, register it with `set_device_component()`.
-2. `_on_selected_track_changed()` — point that device component at the newly
-   selected track's device.
-3. `build_midi_map()` / `receive_midi()` / `_navigate()` — intercept the two
-   relative CCs.
+1. `_setup_device_control()` — construct a `DeviceComponent` *purely* so Live's
+   blue hand follows the same device the knobs write to, and register it with
+   `set_device_component()`. `set_parameter_controls()` is deliberately never
+   called; see gotcha 2.
+2. `_on_selected_track_changed()` — point both that component and the script's own
+   `_target_device` at the newly selected track's device.
+3. `build_midi_map()` / `receive_midi()` / `_navigate()` / `_macro()` — forward and
+   intercept all sixteen CCs, decoding the relative encoding by hand and writing
+   `device.parameters[n]` directly.
 4. `_pad_session()` / `_bank()` / `_offset()` — move the other script's session box.
 
 **`_offset()` reads the session's offsets defensively:**
@@ -475,7 +485,7 @@ track". So:
 
 - **After a fresh Live start the encoders do nothing until you click a track.**
   That is expected behaviour, not a fault. `Log.txt` distinguishes the two: the
-  script logs `device component -> <name>` the first time this fires (once only,
+  script logs `device -> <name>` the first time this fires (once only,
   latched on `_device_logged`). No such line means the hook has never run; a line
   saying `-> None` means it ran and found nothing to control.
 - Selecting a different device *inside* the current track does move the blue hand,
@@ -505,10 +515,10 @@ def receive_midi(self, midi_bytes):
     ControlSurface.receive_midi(self, midi_bytes)      # <-- not optional
 ```
 
-`ControlSurface.receive_midi` is what dispatches incoming messages to the control
-elements the framework built — including the `SliderElement`s feeding the device
-component. Override it and return early for everything, and you have intercepted
-the entire input stream.
+`ControlSurface.receive_midi` is what dispatches incoming messages to every
+control element the framework built. Override it and return early for everything,
+and you have intercepted the entire input stream — including messages other
+components are relying on.
 
 **The symptom is the trap.** Navigation works perfectly, because that is the
 branch you wrote and tested. The macros quietly do nothing, because the messages
@@ -531,16 +541,15 @@ because your handler never runs.
 
 ### 2. `set_parameter_controls` wants exactly 8
 
-```python
-PAD_CCS = (118, 119)     # undefined in the MIDI spec; the device never sends them
-...
-for index, cc in enumerate(MACRO_CCS + PAD_CCS):   # 6 + 2 = 8
-```
-
 Some `_Framework` versions assert that exactly eight parameter controls are
-passed. Only six encoders are free — the other two are spent on navigation — so
-the tuple is padded to eight with CCs the device never transmits. Macros 7 and 8
-are simply unreachable, which is the intent anyway.
+passed to `set_parameter_controls()`. An earlier version of this script padded its
+tuple to eight with CCs the device never transmits, purely to satisfy that assert.
+
+**The current script sidesteps the whole question by never calling the setter.**
+Fourteen simultaneous macros do not fit the mechanism anyway — parameter controls
+address one bank of eight and page between banks — so the parameters are written
+directly and `DeviceComponent` is kept only for the blue hand. If you do use the
+setter, pad to eight.
 
 The reason this is a real hazard and not a style question is the blast radius: the
 call happens inside `__init__`, and an `AssertionError` in `__init__` means the
@@ -577,12 +586,19 @@ counter in the controller's firmware, that counter desyncs from Live the moment
 anything else moves the box, and the box then teleports the next time you touch the
 knob. A relative CC carries a step, not a position, so there is nothing to desync.
 
-Only the two navigation encoders were switched to relative — in the M-Vave editor,
-on the device itself, not in software. The other six stay absolute because absolute
-is right for macros.
+Relative is a per-encoder setting in the M-Vave editor, on the device itself, not
+in software — and on this unit **all sixteen assignments are now relative**, where
+an earlier measurement had only two. That is worth internalising: the mode is not a
+fixed property of a control, and a device reconfiguration can silently invalidate
+an entire script's input handling. When the macros here stopped working, this was
+why — absolute elements were reading 63/65 as "just under half", parking every
+macro near 50%.
 
-What the knob script does instead of using `EncoderElement`: it forwards the two
-CCs (see gotcha 1) and decodes them by hand.
+What the knob script does instead of using `EncoderElement`: it forwards every CC
+it cares about (see gotcha 1) and decodes them all by hand. That avoids depending
+on a `Live.MidiMap.MapMode` constant whose name varies by host version, and it is
+the only option once you are writing parameters directly rather than through
+element bindings.
 
 ```python
 delta = value - CENTRE          # CENTRE = 64; 65 is +1, 63 is -1

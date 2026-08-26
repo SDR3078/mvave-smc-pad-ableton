@@ -268,40 +268,49 @@ is broken from a bulk write.
 ### 4.1 Layout
 
 Eight physical encoders, arriving on ports 1 and 2 only (never port 3). A
-**KNOB BANK** button switches all eight at once between two banks, each bank
-with its own CC set.
+**KNOB BANK** button switches all eight at once between two banks, each bank with
+its own CC set.
 
 Measured with `mvave_probe.py --knobs`, which walks one encoder at a time and
 reports after each, so a silent knob or a CC clash shows up while your hand is
 still on it.
 
-| Encoder | Bank 1 CC | Bank 1 mode | Bank 2 CC | Bank 2 mode |
-|---|---|---|---|---|
-| 1 | 1 | absolute | 44 | absolute |
-| 2 | 2 | absolute | 45 | absolute |
-| 3 | 3 | absolute | 42 | absolute |
-| 4 | 4 | absolute | 43 | absolute |
-| 5 | 5 | absolute | 40 | absolute |
-| 6 | 6 | absolute | 41 | absolute |
-| 7 | 7 | absolute | 38 | **relative** |
-| 8 | 8 | absolute | 39 | **relative** |
+**Current — measured 2026-08-26. Every encoder is relative.**
 
-### 4.2 Bank 2's CC numbers do not follow the printed encoder numbers
+| Encoder | Bank 1 CC | Bank 2 CC |
+|---|---|---|
+| 1 | 7 | 38 |
+| 2 | 8 | 39 |
+| 3 | 5 | 40 |
+| 4 | 6 | 41 |
+| 5 | 3 | 42 |
+| 6 | 4 | 43 |
+| 7 | 1 | 44 |
+| 8 | 2 | 45 |
 
-Bank 1 is well behaved: encoder *n* sends CC *n*. **Bank 2 is not.** The CC
-numbers descend in pairs as the printed labels ascend — encoder 1 sends CC 44,
-encoder 8 sends CC 38.
+**None of this is a property of the hardware.** The same unit measured 2026-08-03
+read bank 1 as CC 1–8 ascending and bank 2 as CC 44, 45, 42, 43, 40, 41, 38, 39 —
+with only the last two relative and everything else absolute. Both banks were
+renumbered and every encoder switched to relative in the M-Vave editor between the
+two readings. Treat the table above as *this unit, on that date*.
 
-Wire your macros in numeric CC order (40, 41, 42, …) and they will scatter across
-the panel in a pattern that looks random when you turn them. Always map bank 2 in
-*encoder* order:
+### 4.2 One bank's CC numbers will not follow the printed encoder numbers
+
+In both measurements exactly one bank ran ascending with the printed labels while
+the other descended in pairs — encoder 1 taking the higher CC of a pair, encoder 8
+the lowest overall. **Which bank misbehaves swapped between the two readings.**
+
+As of the current measurement it is bank 1:
 
 ```
-encoders 1..8  ->  CC 44, 45, 42, 43, 40, 41, 38, 39
+bank 1, encoders 1..8  ->  CC 7, 8, 5, 6, 3, 4, 1, 2
+bank 2, encoders 1..8  ->  CC 38, 39, 40, 41, 42, 43, 44, 45
 ```
 
-That ordering is why `MVave_SMC_KNOBS.py` stores `MACRO_CCS = (44, 45, 42, 43,
-40, 41)` rather than a sorted tuple.
+The consequence is the same whichever bank it lands on: wire a row of controls in
+numeric CC order and they scatter across the panel in a pattern that looks random
+under your hands. **Map in encoder order, and re-measure after any editor change.**
+This is configuration rather than hardware, and it has already moved once.
 
 ### 4.3 A knob that seems dead is usually on the other bank
 
@@ -314,9 +323,10 @@ debugging anything about an encoder.
 The encoders ship **absolute**: the firmware accumulates a position internally and
 reports it, confirmed by walking a knob and watching the value climb (6 → 31).
 
-Two of them — encoders 7 and 8, bank 2, CC 38 and 39 — were switched to
-**relative** by hand in the M-Vave editor. Relative here is the standard
-signed-bit-around-centre scheme:
+Relative is a per-encoder setting made in the M-Vave editor, not a fixed property
+of any encoder. As of 2026-08-26 **all sixteen assignments on this unit are
+relative**; an earlier reading had only two. The encoding is binary-offset around
+a centre of 64:
 
 | Value | Meaning |
 |---|---|
@@ -324,21 +334,22 @@ signed-bit-around-centre scheme:
 | 64 | centre / no movement |
 | 65 | one step clockwise (+1) |
 
-Relative is a setting made in the M-Vave editor, not a fixed property of those two
-encoders — the other six were simply left absolute.
-
 **Why the mode matters.** An absolute CC carries a *value*, which maps cleanly
-onto a continuous range like volume or filter cutoff, where nothing else moves
-the target. A relative CC carries a *step*. If the thing you are driving is an
-integer index that other inputs also move — Ableton's session box, moved by the
-arrow keys and the mouse as well — an absolute encoder's internal counter desyncs
-immediately and the target teleports the next time you touch the knob. There is
-nothing to desync in a relative encoder.
+onto a continuous range like volume or filter cutoff, where nothing else moves the
+target. A relative CC carries a *step*. If the thing you are driving is an integer
+index that other inputs also move — Ableton's session box, moved by the arrow keys
+and the mouse as well — an absolute encoder's internal counter desyncs immediately
+and the target teleports the next time you touch the knob. A relative encoder has
+no position to desync.
 
-If you are writing a `_Framework` script: `SliderElement` handles the absolute
-case, and `EncoderElement` plus a map mode handles relative. Older templates
-frequently only build the absolute kind, which is why the script in this repo
-decodes CC 38/39 itself in `receive_midi` instead of going through the framework.
+**If you are writing a `_Framework` script, the mode decides your whole approach.**
+`SliderElement` reads absolute only; feed it 63/65 and the target parks near half
+and jitters, which is a *silent* failure rather than an obvious one.
+`EncoderElement` plus a `Live.MidiMap.MapMode` handles relative. The script in this
+repo does neither — it decodes 63/65 itself in `receive_midi` and writes
+`device.parameters[n]` directly, because fourteen simultaneous macros do not fit
+`DeviceComponent`'s one-bank-of-eight parameter model, and hand-decoding avoids
+depending on a `MapMode` constant whose name varies by host version.
 
 ---
 
