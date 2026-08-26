@@ -107,6 +107,7 @@ def cmd_listen(args):
                         continue
                     print("  %7.2fs  %-22s %s" % (time.time() - started, port.name[:22], msg))
                     key = (port.name, msg.type,
+                           getattr(msg, "channel", None),
                            getattr(msg, "note", getattr(msg, "control", None)))
                     seen.setdefault(key, []).append(
                         getattr(msg, "velocity", getattr(msg, "value", None)))
@@ -118,18 +119,26 @@ def cmd_listen(args):
             port.close()
 
     print("\n--- summary: %d distinct controls ---" % len(seen))
-    print("  %-22s %-14s %-5s %6s  %s" % ("port", "type", "num", "count", "values seen"))
-    for key in sorted(seen, key=lambda k: (k[0], k[1], k[2] or 0)):
-        pname, mtype, num = key
+    # Channel is in here because on some devices it carries meaning -- a preset
+    # can be identified by the channel it transmits on -- and a summary that
+    # omits it will happily agree with two mutually exclusive theories.
+    print("  %-22s %-14s %-3s %-5s %6s  %s"
+          % ("port", "type", "ch", "num", "count", "values seen"))
+    for key in sorted(seen, key=lambda k: (k[0], k[1], k[2] or 0, k[3] or 0)):
+        pname, mtype, chan, num = key
         values = seen[key]
         vals = [v for v in values if v is not None]
         distinct = sorted(set(vals))
         shown = ", ".join(str(v) for v in distinct[:10])
         if len(distinct) > 10:
             shown += ", ... (%d distinct, range %d-%d)" % (len(distinct), min(vals), max(vals))
-        print("  %-22s %-14s %-5s %6d  %s" % (pname[:22], mtype, num, len(values), shown))
+        print("  %-22s %-14s %-3s %-5s %6d  %s"
+              % (pname[:22], mtype, "-" if chan is None else chan + 1,
+                 num, len(values), shown))
     if not seen:
         print("  (nothing received on any port)")
+    channels = sorted({k[2] + 1 for k in seen if k[2] is not None})
+    print("\nMIDI channels seen: %s" % (", ".join(str(c) for c in channels) or "none"))
     if any(k[1] == "control_change" for k in seen):
         print("\nEncoder encoding: only a couple of distinct values (1 and 127, or")
         print("65 and 63) means RELATIVE -- each tick reports a direction. A wide")
