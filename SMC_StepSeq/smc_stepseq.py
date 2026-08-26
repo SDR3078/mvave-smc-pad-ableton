@@ -221,7 +221,8 @@ class SMCStepSeq(ControlSurface):
             # note-off (HARDWARE.md 2.2). Both forms are accepted anyway.
             pressed = (kind == 0x90 and data2 > 0)
             if channel == PAD_CHANNEL and data1 in self._pads:
-                self._on_pad(self._pads[data1], pressed)
+                # data2 is the strike velocity on a press, 0 on a release.
+                self._on_pad(self._pads[data1], pressed, data2)
                 return True
             if (not BUTTON_IS_CC and channel == BUTTON_CHANNEL
                     and data1 in self._buttons):
@@ -329,8 +330,12 @@ class SMCStepSeq(ControlSurface):
 
     # ------------------------------------------------------------ write path
 
-    def toggle_step(self, pitch, step_index):
-        """Add or remove one 16th note. The only place the clip is written."""
+    def toggle_step(self, pitch, step_index, velocity=None):
+        """Add or remove one 16th note. The only place the clip is written.
+
+        velocity is the strike force when the pads are velocity-sensitive;
+        None falls back to the painted default.
+        """
         clip = self._clip
         if clip is None or not 0 <= pitch <= 127:
             return
@@ -345,7 +350,7 @@ class SMCStepSeq(ControlSurface):
         else:
             spec = Live.Clip.MidiNoteSpecification(
                 pitch=pitch, start_time=time, duration=STEP,
-                velocity=self._paint_velocity, mute=False)
+                velocity=(velocity or self._paint_velocity), mute=False)
             clip.add_new_notes((spec,))
         # Deliberately no render. The clip's notes listener fires on the change
         # and renders -- the same path a mouse edit or a Ctrl+Z takes, so all
@@ -354,17 +359,21 @@ class SMCStepSeq(ControlSurface):
 
     # ------------------------------------------------------------------ input
 
-    def _on_pad(self, index, pressed):
+    def _on_pad(self, index, pressed, velocity=None):
         if not pressed:
             return
         if self._shift:
             self._select_lane(lane_for_pad(index))
             return
+        # Push-style: how hard you hit the pad becomes the step's velocity.
+        # None when the caller has none to offer -- the self-test, and the
+        # sibling-script entry point -- in which case the knob/default stands.
+        strike = velocity if (USE_STRIKE_VELOCITY and velocity) else None
         if self._view == VIEW_FOCUS:
-            self.toggle_step(self._lane, self._bank * 16 + index)
+            self.toggle_step(self._lane, self._bank * 16 + index, strike)
         else:
             row, col = divmod(index, 4)
-            self.toggle_step(self._lane_window + row, self._page * 4 + col)
+            self.toggle_step(self._lane_window + row, self._page * 4 + col, strike)
 
     def _on_button(self, number, pressed):
         if number == BTN_SHIFT:

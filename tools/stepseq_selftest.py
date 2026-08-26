@@ -300,8 +300,8 @@ class SeqTest(unittest.TestCase):
         self.song.view.select(self.clip)
         self.seq.sent = []
 
-    def press(self, pad_index):
-        self.seq.receive_midi(note_on(C.PAD_CHANNEL, C.PAD_NOTES[pad_index]))
+    def press(self, pad_index, velocity=127):
+        self.seq.receive_midi(note_on(C.PAD_CHANNEL, C.PAD_NOTES[pad_index], velocity))
         self.seq.receive_midi(note_on(C.PAD_CHANNEL, C.PAD_NOTES[pad_index], 0))
 
     def button(self, number, down=True):
@@ -369,7 +369,8 @@ class Writing(SeqTest):
         self.assertEqual(note.pitch, C.DEFAULT_LANE)
         self.assertAlmostEqual(note.start_time, 5 * C.STEP)
         self.assertAlmostEqual(note.duration, C.STEP)
-        self.assertEqual(note.velocity, C.PAINT_VELOCITY)
+        # Velocity-sensitive pads: the strike sets it, not the default.
+        self.assertEqual(note.velocity, 127)
 
     def test_pressing_twice_removes_the_note(self):
         self.press(5)
@@ -391,10 +392,31 @@ class Writing(SeqTest):
         self.press(5)
         self.assertEqual(self.clip.notes, [])
 
-    def test_paint_velocity_follows_the_knob(self):
+    def test_strike_velocity_paints_the_step(self):
+        # How hard you hit the pad is the velocity the step gets, Push-style.
+        for pad, hit in ((0, 40), (1, 90), (2, 127)):
+            self.press(pad, hit)
+        self.assertEqual([n.velocity for n in self.clip.notes], [40, 90, 127])
+
+    def test_the_knob_still_applies_when_there_is_no_strike(self):
+        # USE_STRIKE_VELOCITY off, or a caller with no velocity to offer, falls
+        # back to the painted default the knob adjusts.
         self.seq.receive_midi(cc(C.KNOB_CHANNEL, C.CC_VELOCITY, 63))
-        self.press(0)
+        self.seq.toggle_step(C.DEFAULT_LANE, 0)          # no velocity argument
         self.assertEqual(self.clip.notes[0].velocity, C.PAINT_VELOCITY - 1)
+
+    def test_strike_velocity_can_be_turned_off(self):
+        # Patch the SEQUENCER module, not consts. smc_stepseq does
+        # `from .consts import *`, which copies the flag into its own namespace
+        # at import time -- rebinding it on consts afterwards reaches nothing.
+        import SMC_StepSeq.smc_stepseq as seqmod
+        original = seqmod.USE_STRIKE_VELOCITY
+        try:
+            seqmod.USE_STRIKE_VELOCITY = False
+            self.press(0, 40)
+            self.assertEqual(self.clip.notes[0].velocity, C.PAINT_VELOCITY)
+        finally:
+            seqmod.USE_STRIKE_VELOCITY = original
 
     def test_writing_with_no_clip_bound_is_a_no_op(self):
         self.song.view.select(None)

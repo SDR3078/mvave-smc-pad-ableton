@@ -18,24 +18,24 @@
 
 # ---------------------------------------------------------------- what arrives
 
-# MIDI channel the sequencer preset transmits on, 0-indexed: 15 = channel 16.
+# MIDI channel the pads transmit on, 0-indexed: 9 = channel 10.
 #
-# UNVERIFIED. This is the whole mode-discriminator idea: no other preset on the
-# device uses channel 16, so the script can consume channel-16 traffic knowing
-# it belongs to nobody else. It has to be programmed in the M-Vave editor and
-# then confirmed with a monitor.
-PAD_CHANNEL = 15
+# MEASURED 2026-08-26. The channel-16 custom preset this file originally assumed
+# was never needed: with the controller in its Mackie/DAW state the pads already
+# transmit on a channel nothing else uses, velocity-sensitive, and that state is
+# firmware rather than anything in the .spc -- which is why no pad bank in that
+# file describes it. Channel 10 is the General MIDI drum channel.
+PAD_CHANNEL = 9
 
 # The 16 pads, in READING order: index 0 is top-left, index 15 bottom-right.
 #
-# UNVERIFIED for this preset. Note that the clip-launcher bank the rest of this
-# repo uses sends notes 1-16, not 0-15 (HARDWARE.md 2.1), so if you program the
-# new bank by copying that one, change this to tuple(range(1, 17)).
+# MEASURED 2026-08-26, in the Mackie/DAW state: notes 52-67, arriving on ports 1
+# and 2 (never port 3), velocity-sensitive.
 #
-# Also note that the M-Vave editor numbers pads BOTTOM-UP -- its PAD1 is the
-# bottom-left pad, not the top-left one (HARDWARE.md 5.3). The tuple below is in
-# screen reading order regardless of what the editor calls each pad.
-PAD_NOTES = tuple(range(0, 16))
+# Note the asymmetry with LED_NOTES below. Switching the controller into this
+# state changed what the pads SEND but not how they are LIT, so input and output
+# use different note maps and different channels. Both are measured.
+PAD_NOTES = tuple(range(52, 68))
 
 # Second pad note set, if the PAD BANK button turns out to be a silent switch
 # between two note sets rather than something that emits its own message.
@@ -124,10 +124,15 @@ LOG_MIDI = False
 #     is off rather than dim.
 #   - Turning a pad off needs note-on velocity 0. A real note-off (0x80) is
 #     ignored entirely, silently (HARDWARE.md 3.3).
-LED_CHANNEL = PAD_CHANNEL   # UNVERIFIED: does a pad light on any channel, or
-                            # only its own? Measured only on the channel the
-                            # clip-launcher bank uses.
-LED_NOTES = PAD_NOTES       # measured to be the same notes the pads send, on
+LED_CHANNEL = 0             # MEASURED 2026-08-26: channel 1, regardless of the
+                            # channel the pads transmit on. LED addressing did
+                            # not follow the mode switch.
+LED_NOTES = tuple(range(1, 17))   # MEASURED 2026-08-26 on MIDIOUT3, and NOT the
+                            # notes the pads send. Found by sweeping: notes 1-15
+                            # lit fifteen pads and note 16 the last one. The
+                            # earlier reading that "note 16 does nothing" was the
+                            # probe blasting sixteen note-ons with no gap and the
+                            # device dropping the tail -- see FINDINGS.md, and
                             # the clip-launcher bank at least
 
 # The palette, sampled 2026-08-02 (HARDWARE.md 3.2). Usable, well-separated
@@ -169,7 +174,14 @@ COLOR_NO_CLIP = 0
 STEP = 0.25                 # one step in beats: 0.25 = a 16th note
 STEPS_MAX = 32              # two bars of 16ths. v1 edits inside the loop only.
 
-PAINT_VELOCITY = 100        # velocity written into new notes, until CC_VELOCITY
+# Velocity written into a new note when USE_STRIKE_VELOCITY is False, or when a
+# pad reports 0. With velocity-sensitive pads this is only a fallback.
+PAINT_VELOCITY = 100
+
+# Paint each step with the velocity you actually hit the pad at, Push-style.
+# This is why the sequencer needs no velocity encoder: the four CCs it wanted had
+# nowhere to live once both knob banks were spent on device macros.
+USE_STRIKE_VELOCITY = True
                             # moves it
 
 DEFAULT_LANE = 36           # C1, the bottom-left pad of a Live drum rack

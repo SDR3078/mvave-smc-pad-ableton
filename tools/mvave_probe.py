@@ -145,6 +145,19 @@ def cmd_listen(args):
         print("spread over 0-127 means ABSOLUTE -- it reports a position.")
 
 
+# The device drops messages that arrive faster than it can service them, and it
+# is the TAIL of a burst that goes missing. This has now faked a dead pad twice --
+# once with a 128-note blast, once with only 16 -- so every bulk send here is
+# paced. 2 ms is well under a human's notice and well over the device's need.
+SEND_GAP = 0.002
+
+
+def _paced(port, messages):
+    for message in messages:
+        port.send(message)
+        time.sleep(SEND_GAP)
+
+
 def _off(port, channel, note):
     """Extinguish one pad.
 
@@ -156,8 +169,8 @@ def _off(port, channel, note):
 
 
 def _send_all_off(port, channel, lo, hi):
-    for note in range(lo, hi + 1):
-        _off(port, channel, note)
+    _paced(port, [mido.Message("note_on", channel=channel, note=n, velocity=0)
+                  for n in range(lo, hi + 1)])
 
 
 def cmd_light(args):
@@ -168,8 +181,8 @@ def cmd_light(args):
           % (args.lo, args.hi, args.velocity, args.channel, name))
     print("WATCH THE PADS. Holding for %.0fs, then clearing.\n" % args.hold)
     with mido.open_output(name) as port:
-        for note in range(args.lo, args.hi + 1):
-            port.send(mido.Message("note_on", channel=ch, note=note, velocity=args.velocity))
+        _paced(port, [mido.Message("note_on", channel=ch, note=n, velocity=args.velocity)
+                      for n in range(args.lo, args.hi + 1)])
         time.sleep(args.hold)
         _send_all_off(port, ch, args.lo, args.hi)
     print("Cleared. Did anything light up?")
@@ -186,8 +199,8 @@ def cmd_sweep(args):
             for base in range(args.lo, args.hi + 1, args.step):
                 top = min(base + args.step - 1, args.hi)
                 print("  notes %3d-%3d ..." % (base, top))
-                for note in range(base, top + 1):
-                    port.send(mido.Message("note_on", channel=ch, note=note, velocity=args.velocity))
+                _paced(port, [mido.Message("note_on", channel=ch, note=n, velocity=args.velocity)
+                              for n in range(base, top + 1)])
                 time.sleep(args.hold)
                 _send_all_off(port, ch, base, top)
                 time.sleep(0.15)
