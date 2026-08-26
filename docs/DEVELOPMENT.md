@@ -70,7 +70,7 @@ mode"*, several files carry `# emacs-mode: -*- python-*-` and
 credits *"from OpenLabs module SpecialTransportComponent"* for its undo/redo
 handlers.
 
-`MVave_SMC_KNOBS/` is original to this project.
+`MVave_SMC_KNOBS/` and `SMC_StepSeq/` are original to this project.
 
 | Area | Provenance |
 |---|---|
@@ -87,6 +87,7 @@ handlers.
 | `self._missing_clip_setters` version-tolerance logging | **This project** |
 | Every value in `MIDI_Map.py` (note map, 4×4 grid, palette indices, transport notes) | **This project** |
 | `MVave_SMC_KNOBS/` in its entirety | **This project** |
+| `SMC_StepSeq/` in its entirety — see [STEPSEQ.md](STEPSEQ.md) | **This project** |
 
 **The copy in this repo passed through at least one hand between Petrov's
 original and this project.** The `TSB_X`/`TSB_Y` indirection and comments written

@@ -2,7 +2,8 @@
 
 Ableton Live Remote Scripts that turn an **M-Vave SMC-PAD** into a Launchpad-style
 clip launcher — pads fire clips, pad LEDs show clip state, and the encoders drive
-the session box and the selected device's macros.
+the session box and the selected device's macros — and, on a second pad preset,
+into a Push-style **step sequencer** that edits the selected MIDI clip.
 
 Also here: a **complete measured MIDI reference** for the SMC-PAD, and the tool
 used to measure it. The manufacturer publishes no MIDI implementation — both its
@@ -25,6 +26,21 @@ anywhere else.
 Pad colours: green playing · orange loaded · red-pink recording · blue queued ·
 off empty.
 
+### And a step sequencer
+
+`SMC_StepSeq/` is a separate script on a separate pad preset. The 16 pads become
+16 steps of one drum lane in the selected MIDI clip, with a playhead that chases
+Live's playback; a second view shows four lanes by four steps, for reading a
+kick/clap/hat/open-hat groove at a glance.
+
+The clip is the only state it keeps, so Ctrl+Z undoes a step, saving the set
+saves the pattern, and a note drawn with the mouse lights up on the pads.
+
+**Written and self-tested, not yet run on hardware.** Several values in
+`SMC_StepSeq/consts.py` are still guesses and are marked as such.
+**[docs/STEPSEQ.md](docs/STEPSEQ.md)** has the design, the install, and the list
+of what still needs measuring.
+
 ## Why this exists
 
 The SMC-PAD's factory DAW mode speaks Mackie Control. That gives you LED feedback
@@ -42,7 +58,8 @@ to interpret those notes as mute and solo. Fully reversible — put
 Copy `MVave_SMC_PAD/` and `MVave_SMC_KNOBS/` into Live's Remote Scripts
 directory, restart Live, and configure two Control Surface slots. Full steps,
 port assignment, verification and troubleshooting in
-**[docs/INSTALL.md](docs/INSTALL.md)**.
+**[docs/INSTALL.md](docs/INSTALL.md)**. The step sequencer is a third, optional
+script with its own setup in **[docs/STEPSEQ.md](docs/STEPSEQ.md)**.
 
 > **Read the prerequisites first.** The note numbers in `MIDI_Map.py` come from a
 > pad bank that was configured by hand in the M-Vave editor, and two encoders
@@ -55,19 +72,23 @@ port assignment, verification and troubleshooting in
 ```
 ├── MVave_SMC_PAD/      pads, transport, LED feedback   (copy this into Live)
 ├── MVave_SMC_KNOBS/    encoders: navigation + macros   (and this)
+├── SMC_StepSeq/        step sequencer on a second pad preset  (and this, optionally)
 ├── docs/
 │   ├── INSTALL.md      setup, verification, troubleshooting
 │   ├── HARDWARE.md     the measured MIDI reference — ports, notes, LED palette,
 │   │                   encoder map, and the decoded .spc config format
 │   ├── DEVELOPMENT.md  architecture, _Framework gotchas, porting to another controller
 │   ├── PROBE.md        the measurement tool, mode by mode
-│   └── FINDINGS.md     how the device was reverse-engineered, and what went wrong
+│   ├── FINDINGS.md     how the device was reverse-engineered, and what went wrong
+│   ├── STEPSEQ.md      the step sequencer: design, install, what is still unmeasured
+│   └── STEPSEQ-BRIEF.md  the original build brief, kept verbatim
 ├── reference/
 │   └── Ableton.spc     a real config dump — the binary decoded in HARDWARE.md
 └── tools/
     ├── mvave_probe.py       the MIDI probe
     ├── run_probe.bat        Windows launcher; builds its own virtualenv
-    └── requirements-midi.txt
+    ├── requirements-midi.txt
+    └── stepseq_selftest.py  runs the sequencer against a fake Live, no DAW needed
 ```
 
 ## The probe
@@ -83,7 +104,10 @@ controller it adapts easily — see [PROBE.md](docs/PROBE.md).
 
 ## Status
 
-Working and in use. Known gaps, documented rather than hidden:
+The clip launcher and the encoder script are working and in use. The step
+sequencer is written and self-tested but has **never run in Live** — see
+[STEPSEQ.md](docs/STEPSEQ.md) section 5 for the hardware questions it is still
+carrying. Known gaps, documented rather than hidden:
 
 - **Knob bank 1 is unassigned.** Eight free absolute encoders. Candidates: eight
   track volumes via `MixerComponent`, all eight macros via a second
@@ -104,7 +128,8 @@ Working and in use. Known gaps, documented rather than hidden:
 Classes"** template, the long-standing starting point for custom Live Remote
 Scripts. The session, mixer, transport, zooming and view components are
 substantially his; the clip-state colours, the modifier button and every value in
-`MIDI_Map.py` are not. `MVave_SMC_KNOBS/`, `tools/` and `docs/` are original.
+`MIDI_Map.py` are not. `MVave_SMC_KNOBS/`, `SMC_StepSeq/`, `tools/` and `docs/`
+are original.
 [DEVELOPMENT.md](docs/DEVELOPMENT.md) carries a file-by-file provenance table.
 
 Not affiliated with or endorsed by Ableton or M-Vave/Cuvave. Product names belong
@@ -115,4 +140,4 @@ to their owners.
 **Not yet chosen.** Because `MVave_SMC_PAD/` derives from a publicly published
 tutorial template, its licensing position is inherited rather than free to pick,
 and that should be settled before this is shared widely. `MVave_SMC_KNOBS/`,
-`tools/` and `docs/` are original work.
+`SMC_StepSeq/`, `tools/` and `docs/` are original work.

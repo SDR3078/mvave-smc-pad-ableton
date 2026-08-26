@@ -77,9 +77,10 @@ Preferences, before running the probe, or it cannot open the port.
 
 ### 1. Copy both folders into Live's Remote Scripts directory
 
-Copy the folders themselves — `MVave_SMC_PAD` and `MVave_SMC_KNOBS` — not their
-contents, and do not nest them one level deeper. Live scans the direct
-subfolders of this directory, and each subfolder must keep its `__init__.py`.
+Copy the folders themselves — `MVave_SMC_PAD` and `MVave_SMC_KNOBS`, plus
+`SMC_StepSeq` if you want the step sequencer — not their contents, and do not
+nest them one level deeper. Live scans the direct subfolders of this directory,
+and each subfolder must keep its `__init__.py`.
 The result should look like `…/Remote Scripts/MVave_SMC_PAD/__init__.py`.
 
 There are two possible destinations. Prefer the user location: the application
@@ -127,6 +128,12 @@ order does not matter; the numbering below is just for reference.
 - Those are the Windows port names. On macOS the names will differ; identify the
   ports by function instead — the pads appear on the **third** port pair, and the
   encoders appear **identically on the first two pairs** and never on the third.
+
+> **The step sequencer is a third, optional slot.** `SMC_StepSeq` turns a second
+> pad preset into a Push-style step sequencer. Which port it wants depends on a
+> measurement nobody has made yet, and there are two possible shapes —
+> [STEPSEQ.md](STEPSEQ.md) section 6 has both. Skip it entirely if you only want
+> the clip launcher; nothing here depends on it.
 
 ### 4. Leave the remaining port unassigned, with Remote on
 
