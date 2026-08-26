@@ -18,41 +18,29 @@
 
 # ---------------------------------------------------------------- what arrives
 
-# MIDI channel the sequencer preset must transmit on, 0-indexed: 15 = channel 16.
+# MIDI channel the sequencer preset transmits on, 0-indexed: 0 = channel 1.
 #
-# UNVERIFIED -- and a correction. An earlier revision of this file set channel 10
-# and notes 52-67 here, taken from a capture that mixed two device states and had
-# already been identified as contaminated. A clean single-state capture on
-# 2026-08-26 showed the controller sending notes 1-16 on CHANNEL 1, PORT 3, fixed
-# velocity 127 -- byte for byte what the clip launcher sends. There is no second
-# mapping to piggyback on.
-#
-# So the original plan stands: a distinct pad preset is genuinely required, and
-# channel 16 is the discriminator because nothing else on the device uses it.
-# It has to be programmed in the M-Vave editor and then confirmed with a monitor.
-PAD_CHANNEL = 15
+# MEASURED 2026-08-26 on the purpose-built preset. Channel 16 was the original
+# plan and it was never reachable: on this device the channel is not what
+# separates the two scripts -- the NOTE RANGE is.
+PAD_CHANNEL = 0
 
 # The 16 pads, in READING order: index 0 is top-left, index 15 bottom-right.
 #
-# UNVERIFIED -- these are the notes the new preset must be PROGRAMMED to send,
-# not something observed. They must differ from the clip launcher's 1-16 even
-# though channel 16 already separates the two, because a note collision on a
-# shared port is one editor mistake away from both scripts acting on one press.
+# MEASURED 2026-08-26: notes 101-116 on port 3, channel 1, fixed velocity 127.
 #
-# The M-Vave editor numbers pads BOTTOM-UP -- its PAD1 is the bottom-left pad,
-# not the top-left one (HARDWARE.md 5.3). The tuple below is in screen reading
-# order regardless of what the editor calls each pad.
-PAD_NOTES = tuple(range(0, 16))
+# Why this range and not something adjacent to the clip launcher's 1-16: both
+# presets land on port 3 and both use channel 1, so the note range is the ONLY
+# thing distinguishing them. 101-116 is far enough from 1-21 that no editor slip
+# can make them overlap.
+#
+# Getting here required a port-3 bank. In the .spc that is the flag byte -- 0x04
+# routes a bank to port 3, 0x00 routes it to ports 1 and 2 (HARDWARE.md 5.6).
+# Only port-3 banks light their pads, and only they are fixed-velocity; the
+# ports-1/2 banks are velocity-sensitive but cannot be lit at all. That trade is
+# a property of the hardware, not a configuration choice.
+PAD_NOTES = tuple(range(101, 117))
 
-# Second pad note set, if the PAD BANK button turns out to be a silent switch
-# between two note sets rather than something that emits its own message.
-#
-# UNVERIFIED, and left empty on purpose. When PAD BANK is silent the script
-# cannot know which hardware bank is live, so it cannot address bank B's LEDs
-# either -- which is why bank-B notes are treated as plain ALIASES for the same
-# 16 pad positions rather than as steps 17-32. Left/Right is the real step-page
-# control. Fill this in only if you program a second note set and want a stray
-# PAD BANK press to keep the pads working instead of going dead.
 PAD_NOTES_B = ()
 
 # The five buttons above the grid.
@@ -131,16 +119,21 @@ LOG_MIDI = False
 #     is off rather than dim.
 #   - Turning a pad off needs note-on velocity 0. A real note-off (0x80) is
 #     ignored entirely, silently (HARDWARE.md 3.3).
-LED_CHANNEL = 0             # MEASURED 2026-08-26: channel 1, regardless of the
-                            # channel the pads transmit on. LED addressing did
-                            # not follow the mode switch.
-LED_NOTES = tuple(range(1, 17))   # MEASURED 2026-08-26 on MIDIOUT3, and NOT the
-                            # notes the pads send. Found by sweeping: notes 1-15
-                            # lit fifteen pads and note 16 the last one. The
-                            # earlier reading that "note 16 does nothing" was the
-                            # probe blasting sixteen note-ons with no gap and the
-                            # device dropping the tail -- see FINDINGS.md, and
-                            # the clip-launcher bank at least
+LED_CHANNEL = PAD_CHANNEL    # MEASURED 2026-08-26: the LEDs answer on the same
+                             # channel the pads transmit on.
+LED_NOTES = PAD_NOTES        # MEASURED 2026-08-26: the LEDs follow the pad note
+                             # map. Lighting 1-16 on a preset whose pads send
+                             # 101-116 does nothing; lighting 101-116 works.
+                             #
+                             # This was briefly recorded as a fixed 1-16 map,
+                             # from a sweep taken in a state where the pads also
+                             # sent 1-16 -- a confound that fitted both theories
+                             # and discriminated neither. Re-measured on a preset
+                             # with a different note range, which separates them.
+                             #
+                             # Only port-3 banks light at all (flag 0x04). The
+                             # ports-1/2 banks are velocity-sensitive and cannot
+                             # be lit on any port, note range or channel tried.
 
 # The palette, sampled 2026-08-02 (HARDWARE.md 3.2). Usable, well-separated
 # anchors -- and this really is the whole usable range, because everything from
@@ -186,6 +179,10 @@ STEPS_MAX = 32              # two bars of 16ths. v1 edits inside the loop only.
 PAINT_VELOCITY = 100
 
 # Paint each step with the velocity you actually hit the pad at, Push-style.
+#
+# INERT on this hardware: the only banks that light their pads are fixed-velocity,
+# so every strike arrives as 127 and PAINT_VELOCITY effectively governs. Kept on
+# because it costs nothing and is correct the moment a device can do both.
 # Costs nothing when the pads are not velocity-sensitive: a fixed-127 pad simply
 # paints 127, and PAINT_VELOCITY takes over if the preset is ever configured to
 # send a constant. Worth keeping on, because if a velocity-sensitive preset can
