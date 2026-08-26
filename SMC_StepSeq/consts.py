@@ -18,24 +18,31 @@
 
 # ---------------------------------------------------------------- what arrives
 
-# MIDI channel the pads transmit on, 0-indexed: 9 = channel 10.
+# MIDI channel the sequencer preset must transmit on, 0-indexed: 15 = channel 16.
 #
-# MEASURED 2026-08-26. The channel-16 custom preset this file originally assumed
-# was never needed: with the controller in its Mackie/DAW state the pads already
-# transmit on a channel nothing else uses, velocity-sensitive, and that state is
-# firmware rather than anything in the .spc -- which is why no pad bank in that
-# file describes it. Channel 10 is the General MIDI drum channel.
-PAD_CHANNEL = 9
+# UNVERIFIED -- and a correction. An earlier revision of this file set channel 10
+# and notes 52-67 here, taken from a capture that mixed two device states and had
+# already been identified as contaminated. A clean single-state capture on
+# 2026-08-26 showed the controller sending notes 1-16 on CHANNEL 1, PORT 3, fixed
+# velocity 127 -- byte for byte what the clip launcher sends. There is no second
+# mapping to piggyback on.
+#
+# So the original plan stands: a distinct pad preset is genuinely required, and
+# channel 16 is the discriminator because nothing else on the device uses it.
+# It has to be programmed in the M-Vave editor and then confirmed with a monitor.
+PAD_CHANNEL = 15
 
 # The 16 pads, in READING order: index 0 is top-left, index 15 bottom-right.
 #
-# MEASURED 2026-08-26, in the Mackie/DAW state: notes 52-67, arriving on ports 1
-# and 2 (never port 3), velocity-sensitive.
+# UNVERIFIED -- these are the notes the new preset must be PROGRAMMED to send,
+# not something observed. They must differ from the clip launcher's 1-16 even
+# though channel 16 already separates the two, because a note collision on a
+# shared port is one editor mistake away from both scripts acting on one press.
 #
-# Note the asymmetry with LED_NOTES below. Switching the controller into this
-# state changed what the pads SEND but not how they are LIT, so input and output
-# use different note maps and different channels. Both are measured.
-PAD_NOTES = tuple(range(52, 68))
+# The M-Vave editor numbers pads BOTTOM-UP -- its PAD1 is the bottom-left pad,
+# not the top-left one (HARDWARE.md 5.3). The tuple below is in screen reading
+# order regardless of what the editor calls each pad.
+PAD_NOTES = tuple(range(0, 16))
 
 # Second pad note set, if the PAD BANK button turns out to be a silent switch
 # between two note sets rather than something that emits its own message.
@@ -179,8 +186,14 @@ STEPS_MAX = 32              # two bars of 16ths. v1 edits inside the loop only.
 PAINT_VELOCITY = 100
 
 # Paint each step with the velocity you actually hit the pad at, Push-style.
-# This is why the sequencer needs no velocity encoder: the four CCs it wanted had
-# nowhere to live once both knob banks were spent on device macros.
+# Costs nothing when the pads are not velocity-sensitive: a fixed-127 pad simply
+# paints 127, and PAINT_VELOCITY takes over if the preset is ever configured to
+# send a constant. Worth keeping on, because if a velocity-sensitive preset can
+# be built it removes the need for a velocity encoder entirely -- and both knob
+# banks are now spent on device macros, so there is nowhere to put one.
+#
+# NOT yet demonstrated on this device. The velocity-sensitive stream seen on
+# 2026-08-26 came from an unidentified device state and has never been isolated.
 USE_STRIKE_VELOCITY = True
                             # moves it
 
