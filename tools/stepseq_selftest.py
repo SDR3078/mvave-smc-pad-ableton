@@ -502,6 +502,32 @@ class Playhead(SeqTest):
         # This listener fires per audio buffer; only a step change is work.
         self.assertEqual(self.seq.sent, [])
 
+    def test_the_window_follows_the_playhead(self):
+        # A 64-step loop needs no manual paging: the visible 16 are the ones
+        # playing. This is the whole reason STEPS_MAX is no longer 32.
+        self.clip.loop_end = self.clip.loop_start + 64 * C.STEP
+        self.assertEqual(self.seq._bank, 0)
+        self.clip.play(20 * C.STEP)
+        self.assertEqual(self.seq._bank, 1)
+        self.clip.play(50 * C.STEP)
+        self.assertEqual(self.seq._bank, 3)
+
+    def test_paging_by_hand_stops_the_chase(self):
+        self.clip.loop_end = self.clip.loop_start + 64 * C.STEP
+        self.clip.play(20 * C.STEP)           # follows to bank 1
+        self.button(C.BTN_LEFT)               # manual page -> stop following
+        self.assertFalse(self.seq._follow)
+        self.clip.play(50 * C.STEP)
+        self.assertEqual(self.seq._bank, 0)   # stayed put
+
+    def test_stopping_restores_the_chase(self):
+        self.clip.loop_end = self.clip.loop_start + 64 * C.STEP
+        self.clip.play(20 * C.STEP)
+        self.button(C.BTN_LEFT)
+        self.assertFalse(self.seq._follow)
+        self.clip.stop()
+        self.assertTrue(self.seq._follow)
+
     def test_playhead_clears_on_stop(self):
         self.clip.play(2 * C.STEP)
         self.seq.sent = []
@@ -622,11 +648,32 @@ class Views(SeqTest):
         self.press(0)
         self.assertAlmostEqual(self.clip.notes[0].start_time, 16 * C.STEP)
 
-    def test_shift_right_also_toggles_the_view(self):
-        self.button(C.BTN_SHIFT, down=True)
+    def test_shift_arrows_move_the_lane_picker_bank(self):
+        # SHIFT + pad only reaches 16 pitches from _lane_base, and a drum rack
+        # has more rows than that, so the arrows bank the picker while held.
+        base = self.seq._lane_base
+        self.button(C.BTN_SHIFT, True)
         self.button(C.BTN_RIGHT)
-        self.button(C.BTN_SHIFT, down=False)
-        self.assertEqual(self.seq._view, VIEW_FOCUS)
+        self.assertEqual(self.seq._lane_base, base + 16)
+        self.button(C.BTN_LEFT)
+        self.button(C.BTN_LEFT)
+        self.assertEqual(self.seq._lane_base, base - 16)
+        self.button(C.BTN_SHIFT, False)
+
+    def test_shift_arrows_do_not_page_steps(self):
+        self.seq._bank = 0
+        self.button(C.BTN_SHIFT, True)
+        self.button(C.BTN_RIGHT)
+        self.assertEqual(self.seq._bank, 0)
+        self.button(C.BTN_SHIFT, False)
+
+    def test_lane_picker_follows_its_bank(self):
+        self.button(C.BTN_SHIFT, True)
+        self.button(C.BTN_RIGHT)              # base += 16
+        self.press(0)                         # SHIFT + pad 0
+        self.button(C.BTN_SHIFT, False)
+        self.assertEqual(self.seq._lane,
+                         lane_for_pad(0, C.LANE_SELECT_BASE + 16))
 
     def test_shift_pad_scrolls_the_lane_window_into_view(self):
         self.button(C.BTN_SHIFT, down=True)

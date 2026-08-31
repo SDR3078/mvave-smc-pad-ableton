@@ -172,7 +172,15 @@ COLOR_NO_CLIP = 0
 # ------------------------------------------------------------------- sequencer
 
 STEP = 0.25                 # one step in beats: 0.25 = a 16th note
-STEPS_MAX = 32              # two bars of 16ths. v1 edits inside the loop only.
+STEPS_MAX = 256             # 16 bars of 16ths -- a safety ceiling, not the
+                            # working length. The visible window follows the
+                            # playhead, so the clip's own loop decides how many
+                            # pages there are. Edits stay inside the loop.
+
+# Move the visible 16 steps to wherever the playhead is, so a 16, 32 or 64-step
+# loop needs no manual paging. Paging by hand switches this off for the rest of
+# the take; stopping the transport switches it back on.
+FOLLOW_PLAYHEAD = True
 
 # Velocity written into a new note when USE_STRIKE_VELOCITY is False, or when a
 # pad reports 0. With velocity-sensitive pads this is only a fallback.

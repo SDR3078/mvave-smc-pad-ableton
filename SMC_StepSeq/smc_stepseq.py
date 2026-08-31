@@ -121,6 +121,8 @@ class SMCStepSeq(ControlSurface):
         self._lane_window = DEFAULT_LANE
         self._page = 0
         self._shift = False
+        self._follow = FOLLOW_PLAYHEAD
+        self._lane_base = LANE_SELECT_BASE
         self._paint_velocity = PAINT_VELOCITY
         self._grid = [COLOR_STEP_OFF] * 16      # what the clip says
         self._on = [False] * 16                 # which of those hold a note
@@ -363,7 +365,7 @@ class SMCStepSeq(ControlSurface):
         if not pressed:
             return
         if self._shift:
-            self._select_lane(lane_for_pad(index))
+            self._select_lane(lane_for_pad(index, self._lane_base))
             return
         # Push-style: how hard you hit the pad becomes the step's velocity.
         # None when the caller has none to offer -- the self-test, and the
@@ -386,14 +388,12 @@ class SMCStepSeq(ControlSurface):
         elif number == BTN_PLAY:
             self._toggle_transport()
         elif number == BTN_LEFT:
-            self._page_by(-1)
+            # Held SHIFT turns the arrows into a lane-bank control, because
+            # SHIFT + pad only reaches the 16 pitches from _lane_base and a drum
+            # rack has more rows than that.
+            self._lane_base_by(-16) if self._shift else self._page_by(-1)
         elif number == BTN_RIGHT:
-            # SHIFT + right also toggles the view, so the sequencer stays
-            # fully navigable if BTN_VIEW turns out to be unusable.
-            if self._shift:
-                self._toggle_view()
-            else:
-                self._page_by(1)
+            self._lane_base_by(16) if self._shift else self._page_by(1)
 
     def _on_cc(self, cc, value):
         delta = decode_relative(value, KNOB_MODE)
@@ -432,7 +432,15 @@ class SMCStepSeq(ControlSurface):
         self._clamp_pages()
         self._render()
 
+    def _lane_base_by(self, delta):
+        """Move the SHIFT + pad lane picker up or down a bank of 16 pitches."""
+        self._lane_base = _clamp(self._lane_base + delta, 0, 112)
+        self._render()
+
     def _page_by(self, delta):
+        # Manual paging means "stop chasing the playhead" -- otherwise the next
+        # buffer would yank the view back and the button would look broken.
+        self._follow = False
         if self._view == VIEW_FOCUS:
             self._bank = self._bank + delta
         else:
@@ -508,14 +516,36 @@ class SMCStepSeq(ControlSurface):
         step = None
         if clip is not None and clip.is_playing:
             step = step_at(clip.playing_position, clip.loop_start)
-            if not 0 <= step < STEPS_MAX:
+            if not 0 <= step < self._step_count():
                 step = None
         if step == self._playhead:
             # This listener fires per audio buffer. Only a step change is worth
             # any work, and _paint() below reads no clip data at all.
             return
         self._playhead = step
+        if step is None:
+            # Stopping restores following, so a manual page is temporary rather
+            # than sticky and there is no mode to get stuck in.
+            self._follow = FOLLOW_PLAYHEAD
+        elif self._follow and self._scroll_to(step):
+            self._render()      # the window moved, so the whole grid is stale
+            return
         self._paint()
+
+    def _scroll_to(self, step):
+        """Put `step` on the visible window. True if the window actually moved."""
+        if self._view == VIEW_FOCUS:
+            target = step // 16
+            if target == self._bank:
+                return False
+            self._bank = target
+        else:
+            target = step // 4
+            if target == self._page:
+                return False
+            self._page = target
+        self._clamp_pages()
+        return True
 
     def _render(self):
         self._refresh()
