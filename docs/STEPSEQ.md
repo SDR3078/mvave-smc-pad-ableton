@@ -179,7 +179,16 @@ method are in [HARDWARE.md](HARDWARE.md); this is what the sequencer depends on.
 | How does a pad turn off? | **Note-on velocity 0.** A real note-off is ignored, silently. |
 | Do the encoders reach this script? | **No, and they cannot.** Both knob banks are spent on the other script's device macros and there is no third bank. |
 
-**The one trade you cannot configure around:** only port-3 banks light their
+**The one trade you cannot configure around**, and *why* — corrected 2026-08-26:
+this is not a device quirk but a consequence of the assignment type. **MCP
+assignments go to port 3, are fixed-velocity, and light. Plain MIDI assignments go
+to ports 1/2, are velocity-sensitive, and do not light.** MCU is a control
+protocol — on/off buttons, host-driven LEDs; MIDI notes are performance data —
+velocity, and no feedback path in the protocol at all. See
+[HARDWARE.md](HARDWARE.md) 5.6, where the confirming experiment is written up but
+not yet run.
+
+Concretely: only port-3 banks light their
 pads, and only port-3 banks are fixed-velocity. Banks on ports 1 and 2 are
 velocity-sensitive but could not be lit on any port, note range or channel tried.
 So a lit grid and per-step strike velocity are mutually exclusive on this device.

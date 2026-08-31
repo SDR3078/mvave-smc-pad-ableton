@@ -30,9 +30,14 @@ The SMC-PAD enumerates as three independent in/out pairs:
 
 | # | Windows port name | Sends (device → host) | Accepts (host → device) |
 |---|---|---|---|
-| 1 | `SMC-PAD` | encoder CCs | not tested |
-| 2 | `MIDIIN2` / `MIDIOUT2` | encoder CCs, identical to port 1 | not tested |
-| 3 | `MIDIIN3` / `MIDIOUT3` | pad and button notes | pad LED colours |
+| 1 | `SMC-PAD` | encoder CCs, **and MIDI-typed pad notes** | nothing — LEDs do not respond |
+| 2 | `MIDIIN2` / `MIDIOUT2` | identical to port 1 | nothing — LEDs do not respond |
+| 3 | `MIDIIN3` / `MIDIOUT3` | **MCP-typed** pad and button notes | pad LED colours |
+
+> **Corrected 2026-08-26.** This table previously said the pads appear only on
+> port 3. They appear on ports 1 and 2 as well, as velocity-sensitive MIDI notes,
+> when the pad is assigned a plain-MIDI type instead of an MCP one. Which port a
+> control uses is not a setting — see the note at the end of 5.6.
 
 "Port 1/2/3" throughout this document means the Windows enumeration above, in
 that order. The manufacturer's material refers to a *generic* port and a
@@ -474,11 +479,29 @@ map. Reading either artifact in isolation produces nonsense.
 
 Bank 3's `flag` byte is `0x04`. All seven factory banks have `0x00`.
 
-> **Hypothesis, untested.** The flag byte is an **output-port selector**. Two
-> consistent observations support it: pads in bank 3 have `0x04` and appear on
-> port 3, while the encoder records have `0x00` and appear on ports 1 and 2. That
-> is two data points and no experiment. Testable in about a minute — switch the
-> device to preset bank 1 and see which port receives the pad notes.
+> **Superseded 2026-08-26.** This section previously proposed the flag byte as an
+> **output-port selector**, on two consistent observations and no experiment. That
+> was one observation dressed as a mechanism, and it explained only the port.
+>
+> The better model, from the device's owner: **the port follows the assignment
+> TYPE.** MCP/Mackie assignments come out of port 3; plain MIDI assignments come
+> out of ports 1 and 2. That accounts for all four measured properties at once:
+>
+> | Type | Port | Velocity | LEDs |
+> |---|---|---|---|
+> | MCP / Mackie | 3 | fixed 127 | **yes** |
+> | plain MIDI note | 1 & 2 | **sensitive** | no |
+>
+> So the LED/velocity trade in section 3 is not a device quirk — it is the two
+> protocols being what they are. MCU is a control protocol with on/off buttons and
+> host-driven lights; MIDI notes are performance data with velocity and no
+> feedback path. The `0x04` flag is most likely just the MCP marker.
+>
+> **Still untested, and the experiment is designed:** change *one* pad's type from
+> MCP to plain MIDI, keep its note number identical, and capture. If that note
+> alone moves to ports 1/2, becomes velocity-sensitive and stops lighting while
+> its fifteen neighbours do not, the type is the mechanism. Until that is run,
+> treat this as the leading explanation rather than a measured fact.
 
 ---
 
