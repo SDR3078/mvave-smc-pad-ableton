@@ -10,7 +10,7 @@ renamed to match the rest of `docs/`. The brief itself is kept verbatim as
 [STEPSEQ-BRIEF.md](STEPSEQ-BRIEF.md); where this file and the brief disagree,
 this file is what got built and section 4 says why.
 
-> **Status: running in Live on real hardware** (2026-08-26). Every value in
+> **Status: running in Live on real hardware** (2026-08-31). Every value in
 > `consts.py` is measured rather than assumed — section 5 has the table and
 > [HARDWARE.md](HARDWARE.md) has the method. The logic is also exercised by
 > `tools/stepseq_selftest.py` (67 checks, no controller and no DAW required),
@@ -179,7 +179,7 @@ method are in [HARDWARE.md](HARDWARE.md); this is what the sequencer depends on.
 | How does a pad turn off? | **Note-on velocity 0.** A real note-off is ignored, silently. |
 | Do the encoders reach this script? | **No, and they cannot.** Both knob banks are spent on the other script's device macros and there is no third bank. |
 
-**The one trade you cannot configure around**, and *why* — corrected 2026-08-26:
+**The one trade you cannot configure around**, and *why* — corrected 2026-08-31:
 this is not a device quirk but a consequence of the assignment type. **MCP
 assignments go to port 3, are fixed-velocity, and light. Plain MIDI assignments go
 to ports 1/2, are velocity-sensitive, and do not light.** MCU is a control
@@ -280,7 +280,7 @@ From the brief's own out-of-scope list: per-step velocity editing, aftertouch
 ratchets, swing and nudge, auto-creating a clip when none is selected, reading
 drum-rack pad names, note repeat, melodic and scale modes.
 
-**Auto-following the playhead was built after all** (2026-08-26). The brief had
+**Auto-following the playhead was built after all** (2026-08-31). The brief had
 it as a nice-to-have defaulting to off, and this section previously argued that a
 feature off by default is a feature nobody has tried. Running the sequencer in
 Live for the first time settled it immediately: with a 32-step loop and a 16-pad

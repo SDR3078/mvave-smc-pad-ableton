@@ -35,7 +35,7 @@ import Live
 from _Framework.ControlSurface import ControlSurface
 from _Framework.DeviceComponent import DeviceComponent
 
-# Measured 2026-08-26 with tools/mvave_probe.py --knobs, one encoder at a time.
+# Measured 2026-08-31 with tools/mvave_probe.py --knobs, one encoder at a time.
 # Every encoder on the device is RELATIVE, both banks, centred on 64:
 # 65 is one click clockwise, 63 one click back.
 CHANNEL = 0                                     # MIDI channel 1

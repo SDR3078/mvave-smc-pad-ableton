@@ -34,7 +34,7 @@ The SMC-PAD enumerates as three independent in/out pairs:
 | 2 | `MIDIIN2` / `MIDIOUT2` | identical to port 1 | nothing — LEDs do not respond |
 | 3 | `MIDIIN3` / `MIDIOUT3` | **MCP-typed** pad and button notes | pad LED colours |
 
-> **Corrected 2026-08-26.** This table previously said the pads appear only on
+> **Corrected 2026-08-31.** This table previously said the pads appear only on
 > port 3. They appear on ports 1 and 2 as well, as velocity-sensitive MIDI notes,
 > when the pad is assigned a plain-MIDI type instead of an MCP one. Which port a
 > control uses is not a setting — see the note at the end of 5.6.
@@ -280,7 +280,7 @@ Measured with `mvave_probe.py --knobs`, which walks one encoder at a time and
 reports after each, so a silent knob or a CC clash shows up while your hand is
 still on it.
 
-**Current — measured 2026-08-26. Every encoder is relative.**
+**Current — measured 2026-08-31. Every encoder is relative.**
 
 | Encoder | Bank 1 CC | Bank 2 CC |
 |---|---|---|
@@ -329,7 +329,7 @@ The encoders ship **absolute**: the firmware accumulates a position internally a
 reports it, confirmed by walking a knob and watching the value climb (6 → 31).
 
 Relative is a per-encoder setting made in the M-Vave editor, not a fixed property
-of any encoder. As of 2026-08-26 **all sixteen assignments on this unit are
+of any encoder. As of 2026-08-31 **all sixteen assignments on this unit are
 relative**; an earlier reading had only two. The encoding is binary-offset around
 a centre of 64:
 
@@ -479,7 +479,7 @@ map. Reading either artifact in isolation produces nonsense.
 
 Bank 3's `flag` byte is `0x04`. All seven factory banks have `0x00`.
 
-> **Superseded 2026-08-26.** This section previously proposed the flag byte as an
+> **Superseded 2026-08-31.** This section previously proposed the flag byte as an
 > **output-port selector**, on two consistent observations and no experiment. That
 > was one observation dressed as a mechanism, and it explained only the port.
 >

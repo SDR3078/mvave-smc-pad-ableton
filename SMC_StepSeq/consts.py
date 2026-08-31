@@ -20,14 +20,14 @@
 
 # MIDI channel the sequencer preset transmits on, 0-indexed: 0 = channel 1.
 #
-# MEASURED 2026-08-26 on the purpose-built preset. Channel 16 was the original
+# MEASURED 2026-08-31 on the purpose-built preset. Channel 16 was the original
 # plan and it was never reachable: on this device the channel is not what
 # separates the two scripts -- the NOTE RANGE is.
 PAD_CHANNEL = 0
 
 # The 16 pads, in READING order: index 0 is top-left, index 15 bottom-right.
 #
-# MEASURED 2026-08-26: notes 101-116 on port 3, channel 1, fixed velocity 127.
+# MEASURED 2026-08-31: notes 101-116 on port 3, channel 1, fixed velocity 127.
 #
 # Why this range and not something adjacent to the clip launcher's 1-16: both
 # presets land on port 3 and both use channel 1, so the note range is the ONLY
@@ -54,7 +54,7 @@ PAD_NOTES_B = ()
 BUTTON_CHANNEL = 0
 BUTTON_IS_CC = False        # set True if you manage to reassign them to CCs
 
-# MEASURED 2026-08-26 on the sequencer preset. The buttons are PER-PRESET, not
+# MEASURED 2026-08-31 on the sequencer preset. The buttons are PER-PRESET, not
 # global -- an earlier revision of this file claimed the opposite, from reading
 # the .spc's five button records as the whole device's when they are in fact one
 # preset's. A .spc holds ONE preset: 5 buttons, 2 knob banks of 8 encoders, and
@@ -133,9 +133,9 @@ LOG_MIDI = False
 #     is off rather than dim.
 #   - Turning a pad off needs note-on velocity 0. A real note-off (0x80) is
 #     ignored entirely, silently (HARDWARE.md 3.3).
-LED_CHANNEL = PAD_CHANNEL    # MEASURED 2026-08-26: the LEDs answer on the same
+LED_CHANNEL = PAD_CHANNEL    # MEASURED 2026-08-31: the LEDs answer on the same
                              # channel the pads transmit on.
-LED_NOTES = PAD_NOTES        # MEASURED 2026-08-26: the LEDs follow the pad note
+LED_NOTES = PAD_NOTES        # MEASURED 2026-08-31: the LEDs follow the pad note
                              # map. Lighting 1-16 on a preset whose pads send
                              # 101-116 does nothing; lighting 101-116 works.
                              #
@@ -212,7 +212,7 @@ PAINT_VELOCITY = 100
 # banks are now spent on device macros, so there is nowhere to put one.
 #
 # NOT yet demonstrated on this device. The velocity-sensitive stream seen on
-# 2026-08-26 came from an unidentified device state and has never been isolated.
+# 2026-08-31 came from an unidentified device state and has never been isolated.
 USE_STRIKE_VELOCITY = True
                             # moves it
 
