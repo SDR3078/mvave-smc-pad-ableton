@@ -36,8 +36,8 @@ kick/clap/hat/open-hat groove at a glance.
 The clip is the only state it keeps, so Ctrl+Z undoes a step, saving the set
 saves the pattern, and a note drawn with the mouse lights up on the pads.
 
-**Written and self-tested, not yet run on hardware.** Several values in
-`SMC_StepSeq/consts.py` are still guesses and are marked as such.
+**Running on real hardware.** Every value in `SMC_StepSeq/consts.py` is measured.
+The 16 pads follow the playhead, so a 16, 32 or 64-step loop needs no paging.
 **[docs/STEPSEQ.md](docs/STEPSEQ.md)** has the design, the install, and the list
 of what still needs measuring.
 
@@ -105,9 +105,8 @@ controller it adapts easily — see [PROBE.md](docs/PROBE.md).
 ## Status
 
 The clip launcher and the encoder script are working and in use. The step
-sequencer is written and self-tested but has **never run in Live** — see
-[STEPSEQ.md](docs/STEPSEQ.md) section 5 for the hardware questions it is still
-carrying. Known gaps, documented rather than hidden:
+sequencer runs too, on its own port-3 pad preset. Known gaps, documented rather
+than hidden:
 
 - **Both knob banks are now claimed**, so nothing is left for Live's own MIDI
   mapping on that port. Bank 1 uses CC 1–8, two of which (CC 1, CC 7) are the mod
@@ -119,6 +118,13 @@ carrying. Known gaps, documented rather than hidden:
   both would bite anyone adapting this. See [DEVELOPMENT.md](docs/DEVELOPMENT.md).
 - **`PARAMCONTROL` in the pad script maps CC 1–8 on a port that sends no CCs.**
   Inert, but it means both scripts build a device component.
+- **The two pad scripts draw over each other.** Both render LEDs on Live-side
+  events regardless of which pad preset is active. Each could watch for the
+  other's note range and stand down; until then, load one at a time if the
+  flicker bothers you.
+- **Strike velocity is inert.** Only port-3 banks light their pads and only they
+  are fixed-velocity, so a lit grid and per-step velocity are mutually exclusive
+  on this device.
 - **macOS is untested.** This has only ever run against Windows.
 - Several `_Framework` behaviours could not be verified outside Live and are
   marked as such in the code and docs.
