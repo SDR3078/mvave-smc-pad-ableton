@@ -54,11 +54,25 @@ PAD_NOTES_B = ()
 BUTTON_CHANNEL = 0
 BUTTON_IS_CC = False        # set True if you manage to reassign them to CCs
 
-BTN_PLAY = 17               # play/stop toggle -- see below for why the script owns it
-BTN_VIEW = 18               # focus <-> overview
-BTN_SHIFT = 19              # momentary modifier
-BTN_LEFT = 20               # previous step page
-BTN_RIGHT = 21              # next step page
+# MEASURED 2026-08-26 on the sequencer preset. The buttons are PER-PRESET, not
+# global -- an earlier revision of this file claimed the opposite, from reading
+# the .spc's five button records as the whole device's when they are in fact one
+# preset's. A .spc holds ONE preset: 5 buttons, 2 knob banks of 8 encoders, and
+# 8 PAD BANKS of 16 pads. The PAD BANK button moves between those 8; Shift+Pad
+# moves between presets, which is a different file.
+#
+# That is what makes the two scripts separable with no code: this preset offsets
+# everything by 100 from the clip launcher's 1-16 / 17-21, so neither script ever
+# sees the other's traffic, and LED writes only land when they match the active
+# preset's map.
+#
+# BTN_SHIFT is the RECORD button, not the physical key labelled SHIFT -- that one
+# is firmware-local and transmits nothing at all (HARDWARE.md 6.1).
+BTN_PLAY = 117              # play/stop toggle -- see below for why the script owns it
+BTN_VIEW = 118              # focus <-> overview
+BTN_SHIFT = 119             # momentary modifier: hold for the lane picker
+BTN_LEFT = 120              # previous step page; +SHIFT lane bank down
+BTN_RIGHT = 121             # next step page;     +SHIFT lane bank up
 
 # Why the script implements transport at all: claiming a port with a Control
 # Surface disables Track/Sync/Remote on it (HARDWARE.md 1.4), so any button the
