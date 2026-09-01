@@ -83,7 +83,8 @@ script with its own setup in **[docs/STEPSEQ.md](docs/STEPSEQ.md)**.
 │   ├── STEPSEQ.md      the step sequencer: design, install, what is still unmeasured
 │   └── STEPSEQ-BRIEF.md  the original build brief, kept verbatim
 ├── reference/
-│   └── Ableton.spc     a real config dump — the binary decoded in HARDWARE.md
+│   ├── launchpad.spc   the clip-launcher preset, as exported by the editor
+│   └── sequencer.spc   the step-sequencer preset — 41 bytes differ
 └── tools/
     ├── mvave_probe.py       the MIDI probe
     ├── run_probe.bat        Windows launcher; builds its own virtualenv

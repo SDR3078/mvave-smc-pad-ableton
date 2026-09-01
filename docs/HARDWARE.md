@@ -360,6 +360,16 @@ depending on a `MapMode` constant whose name varies by host version.
 
 ## 5. The `.spc` configuration file
 
+> **One file is one preset.** Confirmed 2026-09-01 by decoding the two exported
+> presets in `reference/` side by side: both are 3539 bytes and **41 bytes
+> differ** — the five button notes, two encoder CCs, and the sixteen pad notes of
+> one bank. Nothing else. A preset holds 5 buttons, 2 knob banks of 8 encoders,
+> and 8 pad banks of 16 pads; **PAD BANK** moves within those 8, **Shift+Pad**
+> loads a different file.
+>
+> Both files agree with the constants the scripts use, so they double as a
+> regression fixture.
+
 `Ableton.spc` is what the M-Vave editor writes out. Binary, **no magic bytes, no
 header, no version field**. It is three fixed-size record sections back to back.
 
@@ -381,32 +391,33 @@ whether the arithmetic closes.
 
 | Offset | Records | Size | Contents |
 |---|---|---|---|
-| `@0` | 5 | 23 B | buttons that send SysEx |
+| `@0` | 5 | 23 B | the five buttons |
 | `@115` | 16 | 6 B | continuous controls (encoders) |
 | `@211` | 128 | 26 B | pads — 8 banks x 16 |
 
-**Section 1 — SysEx buttons, `@0`, 5 x 23 B**
+**Section 1 — the five buttons, `@0`, 5 x 23 B**
 
 ```
-[type=05] [00] [id] [00] [7f] [len] [sysex, 16 B] [tail]
+[type=05] [00] [note] [00] [7f] [len] [sysex, 16 B] [tail]
 ```
 
-All five records hold MMC commands:
+**Byte 2 is the note the button transmits.** Corrected 2026-09-01 by diffing two
+exported presets whose buttons measure 17–21 and 117–121: exactly those five
+bytes differ, by +100, and nothing else in the section moves.
 
-| id | MMC command |
-|---|---|
-| 17 | Deferred Play |
-| 18 | Fast Forward |
-| 19 | Rewind |
-| 20 | Stop |
-| 21 | Play |
+This section previously read the records as SysEx buttons carrying MMC commands
+(Deferred Play, Fast Forward, Rewind, Stop, Play). The MMC payload is really
+there — `f0 7f 7f 06 0n f7` — but it is **byte-identical in both presets** while
+the notes differ, so it is not what the device sends. Treat it as vestigial until
+something demonstrates otherwise.
 
-`len` is the length of the SysEx message carried in the fixed 16-byte field.
+The `tail` byte mirrors the note on some records and is `0xff` on others, with no
+pattern established.
 
-**Section 2 — continuous controls, `@115`, 16 x 6 B**
+**Section 2 — the encoders, `@115`, 16 x 6 B — two knob banks of 8**
 
 ```
-[00] [type=02] [00] [cc] [00] [max]
+[flag] [type=02] [00] [cc] [min] [max]
 ```
 
 Sixteen records for eight physical encoders — two banks of eight. The CC bytes
