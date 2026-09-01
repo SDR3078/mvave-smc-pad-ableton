@@ -440,14 +440,20 @@ class SMCStepSeq(ControlSurface):
         self._render()
 
     def _page_by(self, delta):
-        # Manual paging means "stop chasing the playhead" -- otherwise the next
-        # buffer would yank the view back and the button would look broken.
+        # Manual paging stops the chase -- otherwise the next audio buffer yanks
+        # the view back and the button looks broken.
         self._follow = False
         if self._view == VIEW_FOCUS:
             self._bank = self._bank + delta
         else:
             self._page = self._page + delta
         self._clamp_pages()
+        # ...but page back onto the playhead and you have caught up with the
+        # music, so resume. Without this the only way to re-arm following is to
+        # stop the transport, which is the one thing you do not want to do while
+        # playing -- paging away became a mode you could not leave.
+        if self._playhead is not None and self._pads_for_step(self._playhead):
+            self._follow = FOLLOW_PLAYHEAD
         self._render()
 
     def _toggle_transport(self):

@@ -49,11 +49,16 @@ Whether the button LEDs take the pad palette or are simply on/off is unmeasured 
 | Knob CC 20–23 | **unreachable on this hardware — see below** | same |
 
 **The window follows the playhead.** The sixteen pads show the sixteen steps
-being played, so a 16, 32 or 64-step loop needs no paging at all. Paging by hand
-switches the chase off for the rest of the take — otherwise the next audio buffer
-yanks the view back and the button looks broken — and stopping the transport
-switches it back on, so there is no mode to get stuck in. `FOLLOW_PLAYHEAD` in
-`consts.py` turns it off entirely.
+being played, so a 16, 32 or 64-step loop needs no paging at all.
+
+Paging by hand stops the chase, because otherwise the next audio buffer yanks the
+view back and the arrow looks broken. Two things resume it: **paging back onto
+the page the playhead is on**, and stopping the transport. The first is what
+makes this usable — page away to edit steps 17–32 while 1–16 play, then page back
+and it picks the music up again. Without it the only way to re-arm while playing
+was to stop, which made paging away a mode you could not leave mid-jam.
+
+`FOLLOW_PLAYHEAD` in `consts.py` turns the whole thing off.
 
 **The lane picker banks.** SHIFT + pad reaches sixteen pitches starting at
 `LANE_SELECT_BASE`, which is one bank of a drum rack. SHIFT + an arrow moves that

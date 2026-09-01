@@ -531,6 +531,36 @@ class Playhead(SeqTest):
         self.clip.play(50 * C.STEP)
         self.assertEqual(self.seq._bank, 0)   # stayed put
 
+    def test_paging_back_onto_the_playhead_resumes_the_chase(self):
+        # Otherwise the only way to re-arm while playing is to stop the
+        # transport, which makes paging away a mode you cannot leave mid-jam.
+        self.clip.loop_end = self.clip.loop_start + 64 * C.STEP
+        self.clip.play(20 * C.STEP)               # follows to bank 1
+        self.button(C.BTN_RIGHT)                  # page away -> stops following
+        self.assertFalse(self.seq._follow)
+        self.assertEqual(self.seq._bank, 2)
+        self.button(C.BTN_LEFT)                   # back onto the playing page
+        self.assertEqual(self.seq._bank, 1)
+        self.assertTrue(self.seq._follow)
+        self.clip.play(50 * C.STEP)               # and it chases again
+        self.assertEqual(self.seq._bank, 3)
+
+    def test_paging_away_and_staying_away_does_not_resume(self):
+        self.clip.loop_end = self.clip.loop_start + 64 * C.STEP
+        self.clip.play(20 * C.STEP)
+        self.button(C.BTN_RIGHT)
+        self.button(C.BTN_RIGHT)                  # two pages from the playhead
+        self.assertFalse(self.seq._follow)
+        self.clip.play(50 * C.STEP)
+        self.assertEqual(self.seq._bank, 3)       # clamped, not chased
+        self.assertFalse(self.seq._follow)
+
+    def test_paging_with_the_transport_stopped_leaves_follow_alone(self):
+        # _playhead is None when stopped, so there is nothing to catch up to.
+        self.assertIsNone(self.seq._playhead)
+        self.button(C.BTN_RIGHT)
+        self.assertFalse(self.seq._follow)
+
     def test_stopping_restores_the_chase(self):
         self.clip.loop_end = self.clip.loop_start + 64 * C.STEP
         self.clip.play(20 * C.STEP)
