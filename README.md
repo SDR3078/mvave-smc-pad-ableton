@@ -122,9 +122,9 @@ than hidden:
   events regardless of which pad preset is active. Each could watch for the
   other's note range and stand down; until then, load one at a time if the
   flicker bothers you.
-- **Strike velocity is inert.** Only port-3 banks light their pads and only they
-  are fixed-velocity, so a lit grid and per-step velocity are mutually exclusive
-  on this device.
+- **Every sequencer step is written at velocity 127.** The pads that light are
+  the pads that cannot sense velocity, and no encoder is free to carry a paint-
+  velocity knob. Three ways out in [STEPSEQ.md](docs/STEPSEQ.md) section 9.
 - **macOS is untested.** This has only ever run against Windows.
 - Several `_Framework` behaviours could not be verified outside Live and are
   marked as such in the code and docs.

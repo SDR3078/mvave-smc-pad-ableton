@@ -290,3 +290,53 @@ stop mattering. It defaults to **on**.
 Per-step velocity is also implemented (`USE_STRIKE_VELOCITY`) but **inert on this
 hardware**: only port-3 banks light their pads, and only they are fixed-velocity.
 See [HARDWARE.md](HARDWARE.md) — the trade is a property of the device.
+
+---
+
+## 9. To do
+
+### Every step is written at velocity 127
+
+The pads send a fixed 127 — MCP-typed banks are the only ones that light, and
+they are not velocity-sensitive (section 5). `USE_STRIKE_VELOCITY` is on, so that
+127 wins and `PAINT_VELOCITY` is never reached. A whole pattern therefore comes
+out at full scale: no ghost notes, no dynamics.
+
+The knob designed to fix this is `CC_VELOCITY`, and there is no encoder left to
+send it. All sixteen are device macros on both presets — the launcher spends its
+bottom pair on session navigation, the sequencer on macros 15 and 16.
+
+Three ways out, cheapest first:
+
+1. **`USE_STRIKE_VELOCITY = False`.** Steps then take `PAINT_VELOCITY`, a number
+   you can edit. Still uniform, but not full scale, and it is one line.
+2. **Draw the dynamics in Live afterwards** — which is what you would do for
+   ghost notes regardless.
+3. **Spend two macros.** Reassign two encoders on the sequencer preset to
+   `CC_LANE` and `CC_VELOCITY` and both become live controls. The handlers are
+   already written; only the device assignment is missing.
+
+This matters more than a missing convenience. Flat velocity is exactly what made
+an earlier track in this project measure as dynamically dead, and velocity is the
+only dynamics lever available when the control API cannot write automation
+envelopes.
+
+### Constants describing controls that cannot exist
+
+`CC_LANE` (20), `CC_VELOCITY` (21), `CC_LENGTH` (22) and `CC_SPARE` (23) are
+unreachable for the same reason. Two of them are covered otherwise — lane
+selection by holding the modifier and pressing a pad, paging by the window
+following the playhead — so only velocity and pattern length are real losses.
+
+### Rename `BTN_SHIFT`
+
+It is the **record** button. The device also has a key physically labelled SHIFT,
+which does something entirely different and transmits nothing at all
+([HARDWARE.md](HARDWARE.md) 6.1). The name is a collision waiting to cost someone
+an hour.
+
+### Confirm the MCP-vs-MIDI experiment
+
+[HARDWARE.md](HARDWARE.md) 5.6 carries the leading explanation for why port,
+velocity and LEDs move together, with the single-variable experiment written out
+and not yet run.
