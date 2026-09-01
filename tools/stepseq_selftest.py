@@ -545,15 +545,39 @@ class Playhead(SeqTest):
         self.clip.play(50 * C.STEP)               # and it chases again
         self.assertEqual(self.seq._bank, 3)
 
-    def test_paging_away_and_staying_away_does_not_resume(self):
+    def test_paging_away_holds_until_the_loop_comes_round(self):
         self.clip.loop_end = self.clip.loop_start + 64 * C.STEP
         self.clip.play(20 * C.STEP)
         self.button(C.BTN_RIGHT)
         self.button(C.BTN_RIGHT)                  # two pages from the playhead
         self.assertFalse(self.seq._follow)
-        self.clip.play(50 * C.STEP)
-        self.assertEqual(self.seq._bank, 3)       # clamped, not chased
+        self.clip.play(50 * C.STEP)               # still playing forwards
         self.assertFalse(self.seq._follow)
+        self.assertEqual(self.seq._bank, 3)       # stayed where you put it
+
+    def test_the_loop_wrapping_resumes_the_chase(self):
+        self.clip.loop_end = self.clip.loop_start + 64 * C.STEP
+        self.clip.play(20 * C.STEP)
+        self.button(C.BTN_RIGHT)
+        self.assertFalse(self.seq._follow)
+        self.clip.play(50 * C.STEP)
+        self.assertFalse(self.seq._follow)
+        self.clip.play(2 * C.STEP)                # wrapped: step went backwards
+        self.assertTrue(self.seq._follow)
+        self.assertEqual(self.seq._bank, 0)       # and snapped to the playhead
+
+    def test_wrap_resume_can_be_switched_off(self):
+        import SMC_StepSeq.smc_stepseq as seqmod
+        original = seqmod.FOLLOW_RESUMES_ON_WRAP
+        try:
+            seqmod.FOLLOW_RESUMES_ON_WRAP = False
+            self.clip.loop_end = self.clip.loop_start + 64 * C.STEP
+            self.clip.play(20 * C.STEP)
+            self.button(C.BTN_RIGHT)
+            self.clip.play(2 * C.STEP)            # wraps, but must not resume
+            self.assertFalse(self.seq._follow)
+        finally:
+            seqmod.FOLLOW_RESUMES_ON_WRAP = original
 
     def test_paging_with_the_transport_stopped_leaves_follow_alone(self):
         # _playhead is None when stopped, so there is nothing to catch up to.

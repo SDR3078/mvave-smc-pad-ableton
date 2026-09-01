@@ -210,6 +210,14 @@ STEPS_MAX = 256             # 16 bars of 16ths -- a safety ceiling, not the
 # the take; stopping the transport switches it back on.
 FOLLOW_PLAYHEAD = True
 
+# Paging by hand has to stop the chase for a moment, or the next audio buffer
+# yanks the view straight back and the arrow looks broken. This decides how long
+# "a moment" is: with it True the chase resumes the next time the loop comes
+# round, so paging away is a peek at the current cycle rather than a mode you
+# have to leave by hand. Set False to make a manual page stick until you either
+# page back onto the playhead or stop the transport.
+FOLLOW_RESUMES_ON_WRAP = True
+
 # Velocity written into a new note when USE_STRIKE_VELOCITY is False, or when a
 # pad reports 0. With velocity-sensitive pads this is only a fallback.
 PAINT_VELOCITY = 100

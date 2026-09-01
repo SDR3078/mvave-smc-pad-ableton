@@ -527,7 +527,8 @@ class SMCStepSeq(ControlSurface):
             step = step_at(clip.playing_position, clip.loop_start)
             if not 0 <= step < self._step_count():
                 step = None
-        if step == self._playhead:
+        previous = self._playhead
+        if step == previous:
             # This listener fires per audio buffer. Only a step change is worth
             # any work, and _paint() below reads no clip data at all.
             return
@@ -536,9 +537,16 @@ class SMCStepSeq(ControlSurface):
             # Stopping restores following, so a manual page is temporary rather
             # than sticky and there is no mode to get stuck in.
             self._follow = FOLLOW_PLAYHEAD
-        elif self._follow and self._scroll_to(step):
-            self._render()      # the window moved, so the whole grid is stale
-            return
+        else:
+            if (FOLLOW_RESUMES_ON_WRAP and not self._follow
+                    and previous is not None and step < previous):
+                # The step number went backwards, so the loop came round again.
+                # Resume: paging away is a peek at one cycle, not a mode. Without
+                # this the view stays stranded until you page back or stop.
+                self._follow = FOLLOW_PLAYHEAD
+            if self._follow and self._scroll_to(step):
+                self._render()  # the window moved, so the whole grid is stale
+                return
         self._paint()
 
     def _scroll_to(self, step):

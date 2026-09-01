@@ -51,14 +51,23 @@ Whether the button LEDs take the pad palette or are simply on/off is unmeasured 
 **The window follows the playhead.** The sixteen pads show the sixteen steps
 being played, so a 16, 32 or 64-step loop needs no paging at all.
 
-Paging by hand stops the chase, because otherwise the next audio buffer yanks the
-view back and the arrow looks broken. Two things resume it: **paging back onto
-the page the playhead is on**, and stopping the transport. The first is what
-makes this usable — page away to edit steps 17–32 while 1–16 play, then page back
-and it picks the music up again. Without it the only way to re-arm while playing
-was to stop, which made paging away a mode you could not leave mid-jam.
+Paging by hand stops the chase for a moment, because otherwise the next audio
+buffer yanks the view straight back and the arrow looks broken. It comes back on
+its own — **paging away is a peek at the current cycle, not a mode**:
 
-`FOLLOW_PLAYHEAD` in `consts.py` turns the whole thing off.
+| What you do | What happens |
+|---|---|
+| press `<` or `>` while playing | the view stays where you put it |
+| the loop comes round again | the chase resumes and the view snaps to the playhead |
+| page back onto the playing page | resumes immediately, without waiting |
+| stop the transport | resumes |
+
+So you can page away to edit steps 17–32 while 1–16 play, and at the top of the
+next loop the view returns to the music by itself. You never have to remember to
+re-arm it, and the wait is bounded by one cycle.
+
+`FOLLOW_RESUMES_ON_WRAP = False` makes a manual page stick until you page back or
+stop; `FOLLOW_PLAYHEAD = False` turns the whole thing off.
 
 **The lane picker banks.** SHIFT + pad reaches sixteen pitches starting at
 `LANE_SELECT_BASE`, which is one bank of a drum rack. SHIFT + an arrow moves that
