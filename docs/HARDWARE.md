@@ -369,6 +369,18 @@ depending on a `MapMode` constant whose name varies by host version.
 >
 > Both files agree with the constants the scripts use, so they double as a
 > regression fixture.
+>
+> **On reading `git`'s rename detection.** Git paired the older single dump with
+> `launchpad.spc` and reported it as a rename — but rename detection matches on
+> *similarity*, not identity, and `Bin 3539 -> 3539` says nothing about whether
+> the content moved. It had moved: 108 bytes, including the bank-2 encoder
+> renumbering and a whole pad bank reverting to factory. Diff the bytes; do not
+> read `R` as "unchanged".
+>
+> That diff also explains an earlier confusion. The sequencer's 101–116 layout
+> once lived in **pad bank 8 of the launcher preset**, so both note ranges came
+> out of one preset and were reachable by PAD BANK rather than Shift+Pad.
+> Splitting them into two preset files is what made them independent.
 
 A `.spc` file is what the M-Vave editor writes out, one per preset. Binary, **no magic bytes, no
 header, no version field**. It is three fixed-size record sections back to back.
