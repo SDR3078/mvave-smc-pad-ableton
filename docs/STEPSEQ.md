@@ -28,9 +28,9 @@ this file is what got built and section 4 says why.
 | Control | Focus view | Overview |
 |---|---|---|
 | Pads | toggle a 16th note in the current lane | toggle a step at (lane row, beat column) |
-| SHIFT + pad | select the lane, drum-rack layout | same, and scrolls the lane window to it |
+| MOD + pad | select the lane, drum-rack layout | same, and scrolls the lane window to it |
 | `<` `>` | page through the steps by 16 | page four steps at a time |
-| SHIFT + `<` `>` | **bank the lane picker by 16 pitches** | same |
+| MOD + `<` `>` | **bank the lane picker by 16 pitches** | same |
 | stop button | switch view | switch view |
 | play button | start/stop Live's transport | same |
 
@@ -69,8 +69,14 @@ re-arm it, and the wait is bounded by one cycle.
 `FOLLOW_RESUMES_ON_WRAP = False` makes a manual page stick until you page back or
 stop; `FOLLOW_PLAYHEAD = False` turns the whole thing off.
 
-**The lane picker banks.** SHIFT + pad reaches sixteen pitches starting at
-`LANE_SELECT_BASE`, which is one bank of a drum rack. SHIFT + an arrow moves that
+**MOD is the record button** (`BTN_MOD`, note 119), held down. It is deliberately
+not called SHIFT: the device has a key physically labelled SHIFT which does
+something else entirely and transmits nothing at all
+([HARDWARE.md](HARDWARE.md) 6.1), so using that word for this button would put
+two unrelated things under one name in a codebase about this exact device.
+
+**The lane picker banks.** MOD + pad reaches sixteen pitches starting at
+`LANE_SELECT_BASE`, which is one bank of a drum rack. MOD + an arrow moves that
 base by 16, so the whole rack is reachable.
 
 **The encoder CCs are not wired.** Both knob banks are spent on device macros for
@@ -354,13 +360,6 @@ envelopes.
 unreachable for the same reason. Two of them are covered otherwise — lane
 selection by holding the modifier and pressing a pad, paging by the window
 following the playhead — so only velocity and pattern length are real losses.
-
-### Rename `BTN_SHIFT`
-
-It is the **record** button. The device also has a key physically labelled SHIFT,
-which does something entirely different and transmits nothing at all
-([HARDWARE.md](HARDWARE.md) 6.1). The name is a collision waiting to cost someone
-an hour.
 
 ### Confirm the MCP-vs-MIDI experiment
 

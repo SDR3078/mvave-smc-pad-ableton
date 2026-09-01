@@ -639,14 +639,14 @@ class Navigation(SeqTest):
         self.assertAlmostEqual(self.clip.notes[0].start_time, 0.0)
 
     def test_shift_pad_selects_a_lane(self):
-        self.button(C.BTN_SHIFT, down=True)
+        self.button(C.BTN_MOD, down=True)
         self.press(15)                  # bottom-right -> 39
-        self.button(C.BTN_SHIFT, down=False)
+        self.button(C.BTN_MOD, down=False)
         self.press(0)
         self.assertEqual(self.clip.notes[0].pitch, 39)
 
     def test_shift_pad_does_not_write_a_step(self):
-        self.button(C.BTN_SHIFT, down=True)
+        self.button(C.BTN_MOD, down=True)
         self.press(0)
         self.assertEqual(self.clip.notes, [])
 
@@ -724,33 +724,33 @@ class Views(SeqTest):
         # SHIFT + pad only reaches 16 pitches from _lane_base, and a drum rack
         # has more rows than that, so the arrows bank the picker while held.
         base = self.seq._lane_base
-        self.button(C.BTN_SHIFT, True)
+        self.button(C.BTN_MOD, True)
         self.button(C.BTN_RIGHT)
         self.assertEqual(self.seq._lane_base, base + 16)
         self.button(C.BTN_LEFT)
         self.button(C.BTN_LEFT)
         self.assertEqual(self.seq._lane_base, base - 16)
-        self.button(C.BTN_SHIFT, False)
+        self.button(C.BTN_MOD, False)
 
     def test_shift_arrows_do_not_page_steps(self):
         self.seq._bank = 0
-        self.button(C.BTN_SHIFT, True)
+        self.button(C.BTN_MOD, True)
         self.button(C.BTN_RIGHT)
         self.assertEqual(self.seq._bank, 0)
-        self.button(C.BTN_SHIFT, False)
+        self.button(C.BTN_MOD, False)
 
     def test_lane_picker_follows_its_bank(self):
-        self.button(C.BTN_SHIFT, True)
+        self.button(C.BTN_MOD, True)
         self.button(C.BTN_RIGHT)              # base += 16
         self.press(0)                         # SHIFT + pad 0
-        self.button(C.BTN_SHIFT, False)
+        self.button(C.BTN_MOD, False)
         self.assertEqual(self.seq._lane,
                          lane_for_pad(0, C.LANE_SELECT_BASE + 16))
 
     def test_shift_pad_scrolls_the_lane_window_into_view(self):
-        self.button(C.BTN_SHIFT, down=True)
+        self.button(C.BTN_MOD, down=True)
         self.press(12)                  # bottom-left -> 36... top row of window
-        self.button(C.BTN_SHIFT, down=False)
+        self.button(C.BTN_MOD, down=False)
         self.press(0)
         self.assertEqual(self.clip.notes[0].pitch, lane_for_pad(12))
 
@@ -807,7 +807,7 @@ class MidiPlumbing(SeqTest):
         forwarded = set(MIDI_MAP.forwarded)
         for note in C.PAD_NOTES:
             self.assertIn(('note', C.PAD_CHANNEL, note), forwarded)
-        for number in (C.BTN_LEFT, C.BTN_RIGHT, C.BTN_SHIFT, C.BTN_VIEW):
+        for number in (C.BTN_LEFT, C.BTN_RIGHT, C.BTN_MOD, C.BTN_VIEW):
             self.assertIn(('note', C.BUTTON_CHANNEL, number), forwarded)
         self.assertIn(('cc', C.KNOB_CHANNEL, C.CC_LANE), forwarded)
 
@@ -853,7 +853,7 @@ class Configuration(unittest.TestCase):
         self.assertEqual(len(C.LANE_COLORS), 4)
 
     def test_pads_and_buttons_do_not_collide(self):
-        buttons = set(n for n in (C.BTN_PLAY, C.BTN_VIEW, C.BTN_SHIFT,
+        buttons = set(n for n in (C.BTN_PLAY, C.BTN_VIEW, C.BTN_MOD,
                                   C.BTN_LEFT, C.BTN_RIGHT) if n is not None)
         if C.BUTTON_CHANNEL == C.PAD_CHANNEL and not C.BUTTON_IS_CC:
             self.assertFalse((buttons & set(C.PAD_NOTES))
@@ -907,11 +907,11 @@ class ButtonLeds(SeqTest):
 
     def test_modifier_lights_while_held(self):
         self.seq.sent = []
-        self.button(C.BTN_SHIFT, True)
-        self.assertEqual(self.btn_led(C.BTN_SHIFT), C.BTN_LED_ON)
+        self.button(C.BTN_MOD, True)
+        self.assertEqual(self.btn_led(C.BTN_MOD), C.BTN_LED_ON)
         self.seq.sent = []
-        self.button(C.BTN_SHIFT, False)
-        self.assertEqual(self.btn_led(C.BTN_SHIFT), C.BTN_LED_OFF)
+        self.button(C.BTN_MOD, False)
+        self.assertEqual(self.btn_led(C.BTN_MOD), C.BTN_LED_OFF)
 
     def test_button_leds_are_diffed_not_resent(self):
         # _paint() runs on every playhead step. Without the cache each step would

@@ -120,7 +120,7 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         self._bank = 0
         self._lane_window = DEFAULT_LANE
         self._page = 0
-        self._shift = False
+        self._mod = False
         self._follow = FOLLOW_PLAYHEAD
         self._lane_base = LANE_SELECT_BASE
         self._paint_velocity = PAINT_VELOCITY
@@ -135,7 +135,7 @@ class MVave_SMC_STEPSEQ(ControlSurface):
             self._pads[note] = index
         for index, note in enumerate(PAD_NOTES_B):
             self._pads[note] = index
-        self._buttons = tuple(n for n in (BTN_PLAY, BTN_VIEW, BTN_SHIFT,
+        self._buttons = tuple(n for n in (BTN_PLAY, BTN_VIEW, BTN_MOD,
                                           BTN_LEFT, BTN_RIGHT) if n is not None)
 
         ControlSurface.__init__(self, c_instance)
@@ -365,7 +365,7 @@ class MVave_SMC_STEPSEQ(ControlSurface):
     def _on_pad(self, index, pressed, velocity=None):
         if not pressed:
             return
-        if self._shift:
+        if self._mod:
             self._select_lane(lane_for_pad(index, self._lane_base))
             return
         # Push-style: how hard you hit the pad becomes the step's velocity.
@@ -379,8 +379,8 @@ class MVave_SMC_STEPSEQ(ControlSurface):
             self.toggle_step(self._lane_window + row, self._page * 4 + col, strike)
 
     def _on_button(self, number, pressed):
-        if number == BTN_SHIFT:
-            self._shift = pressed
+        if number == BTN_MOD:
+            self._mod = pressed
             self._paint_buttons()       # lights while held, clears on release
             return
         if not pressed:
@@ -393,9 +393,9 @@ class MVave_SMC_STEPSEQ(ControlSurface):
             # Held SHIFT turns the arrows into a lane-bank control, because
             # SHIFT + pad only reaches the 16 pitches from _lane_base and a drum
             # rack has more rows than that.
-            self._lane_base_by(-16) if self._shift else self._page_by(-1)
+            self._lane_base_by(-16) if self._mod else self._page_by(-1)
         elif number == BTN_RIGHT:
-            self._lane_base_by(16) if self._shift else self._page_by(1)
+            self._lane_base_by(16) if self._mod else self._page_by(1)
 
     def _on_cc(self, cc, value):
         delta = decode_relative(value, KNOB_MODE)
@@ -647,7 +647,7 @@ class MVave_SMC_STEPSEQ(ControlSurface):
             playing = False
         for note, on in ((BTN_PLAY, playing),
                          (BTN_VIEW, self._view == VIEW_OVERVIEW),
-                         (BTN_SHIFT, self._shift)):
+                         (BTN_MOD, self._mod)):
             if note is None or note < 0:
                 continue
             color = BTN_LED_ON if on else BTN_LED_OFF
@@ -668,7 +668,7 @@ class MVave_SMC_STEPSEQ(ControlSurface):
             self._led[index] = COLOR_STEP_OFF
             self._send_led(index, COLOR_STEP_OFF)
         if BUTTON_LEDS:
-            for note in (BTN_PLAY, BTN_VIEW, BTN_SHIFT):
+            for note in (BTN_PLAY, BTN_VIEW, BTN_MOD):
                 if note is not None and note >= 0:
                     self._btn_led[note] = BTN_LED_OFF
                     self._send_midi((0x90 | BUTTON_CHANNEL, note, BTN_LED_OFF))

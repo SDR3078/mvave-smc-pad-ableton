@@ -66,11 +66,13 @@ BUTTON_IS_CC = False        # set True if you manage to reassign them to CCs
 # sees the other's traffic, and LED writes only land when they match the active
 # preset's map.
 #
-# BTN_SHIFT is the RECORD button, not the physical key labelled SHIFT -- that one
-# is firmware-local and transmits nothing at all (HARDWARE.md 6.1).
+# BTN_MOD is the RECORD button. It is called MOD and not SHIFT on purpose: the
+# device has a key physically labelled SHIFT which does something else entirely
+# and transmits nothing at all (HARDWARE.md 6.1), so naming this one SHIFT meant
+# two unrelated things under one word in a codebase about this exact device.
 BTN_PLAY = 117              # play/stop toggle -- see below for why the script owns it
 BTN_VIEW = 118              # focus <-> overview
-BTN_SHIFT = 119             # momentary modifier: hold for the lane picker
+BTN_MOD = 119             # momentary modifier: hold for the lane picker
 BTN_LEFT = 120              # previous step page; +SHIFT lane bank down
 BTN_RIGHT = 121             # next step page;     +SHIFT lane bank up
 
