@@ -56,6 +56,50 @@ Three consequences worth internalising before you start:
 
 ---
 
+## Package naming, and one hazard it creates
+
+Every Control Surface in this repo follows the same shape:
+
+```
+MVave_SMC_<ROLE>/                 <- Live shows this string in its dropdown
+├── __init__.py                   <- create_instance()
+├── MVave_SMC_<ROLE>.py           <- the module, named for the folder
+│     class MVave_SMC_<ROLE>      <- the class, named for the module
+└── MIDI_Map.py                   <- device numbers, when there are enough
+                                     to justify a file; inline otherwise
+```
+
+| | Folder | Module | Class | Constants |
+|---|---|---|---|---|
+| `MVave_SMC_PAD` | ✓ | ✓ | ✓ | `MIDI_Map.py` |
+| `MVave_SMC_KNOBS` | ✓ | ✓ | ✓ | inline (~6 of them) |
+| `MVave_SMC_STEPSEQ` | ✓ | ✓ | ✓ | `MIDI_Map.py` |
+
+The folder name is load-bearing — it is the string a user picks in Live, so
+renaming a package means re-selecting it in Preferences.
+
+**The hazard.** Package, module and class share one name, and `__init__.py` does
+`from .MVave_SMC_<ROLE> import MVave_SMC_<ROLE>` — which binds the **class** over
+the **module** in the package namespace. So this does not do what it looks like:
+
+```python
+import MVave_SMC_STEPSEQ.MVave_SMC_STEPSEQ as m   # m is the CLASS, not the module
+m.SOME_FLAG = False                               # sets a class attribute; the
+                                                  # module's global is untouched
+```
+
+It fails *silently* in the direction that matters: the assignment succeeds, and
+the code reading the global never sees it. `sys.modules` is not shadowed, so
+that is the reliable handle:
+
+```python
+m = sys.modules['MVave_SMC_STEPSEQ.MVave_SMC_STEPSEQ']
+```
+
+All three packages have this shadowing. Only the self-test ever imports a module
+by its dotted path, so it is the only place that has to care — see `SEQ_MODULE`
+in `tools/stepseq_selftest.py`.
+
 ## Origin and attribution
 
 `MVave_SMC_PAD/` is a derivative of **Hanz Petrov's "Introduction to the
@@ -70,7 +114,7 @@ mode"*, several files carry `# emacs-mode: -*- python-*-` and
 credits *"from OpenLabs module SpecialTransportComponent"* for its undo/redo
 handlers.
 
-`MVave_SMC_KNOBS/` and `SMC_StepSeq/` are original to this project.
+`MVave_SMC_KNOBS/` and `MVave_SMC_STEPSEQ/` are original to this project.
 
 | Area | Provenance |
 |---|---|
@@ -87,7 +131,7 @@ handlers.
 | `self._missing_clip_setters` version-tolerance logging | **This project** |
 | Every value in `MIDI_Map.py` (note map, 4×4 grid, palette indices, transport notes) | **This project** |
 | `MVave_SMC_KNOBS/` in its entirety | **This project** |
-| `SMC_StepSeq/` in its entirety — see [STEPSEQ.md](STEPSEQ.md) | **This project** |
+| `MVave_SMC_STEPSEQ/` in its entirety — see [STEPSEQ.md](STEPSEQ.md) | **This project** |
 
 **The copy in this repo passed through at least one hand between Petrov's
 original and this project.** The `TSB_X`/`TSB_Y` indirection and comments written

@@ -22,7 +22,7 @@
 #   why nothing here writes to the clip during a render -- the listener would
 #   feed itself.
 #
-# Every hardware number is in consts.py. There are none in this file.
+# Every hardware number is in MIDI_Map.py. There are none in this file.
 
 from __future__ import with_statement
 
@@ -32,7 +32,7 @@ import traceback
 import Live
 from _Framework.ControlSurface import ControlSurface
 
-from .consts import *
+from .MIDI_Map import *
 
 
 VIEW_FOCUS = 0
@@ -50,7 +50,7 @@ def decode_relative(value, mode):
 
     The two schemes are mutually ambiguous -- a value of 63 is +63 under 'twos'
     and -1 under 'centre' -- so which one is in use has to be configured rather
-    than detected. See KNOB_MODE in consts.py.
+    than detected. See KNOB_MODE in MIDI_Map.py.
     """
     if mode == 'twos':
         return value if value < 64 else value - 128
@@ -101,7 +101,7 @@ def _guarded(where):
     return decorate
 
 
-class SMCStepSeq(ControlSurface):
+class MVave_SMC_STEPSEQ(ControlSurface):
     __doc__ = " Push-style step sequencer for the M-Vave SMC-PAD "
 
     # Mirrors MVave_SMC_PAD's pattern, for the same reason: a sibling script
@@ -142,8 +142,8 @@ class SMCStepSeq(ControlSurface):
         with self.component_guard():
             self._attach_song_listeners()
         self._ready = True
-        if self not in SMCStepSeq._active_instances:
-            SMCStepSeq._active_instances.append(self)
+        if self not in MVave_SMC_STEPSEQ._active_instances:
+            MVave_SMC_STEPSEQ._active_instances.append(self)
         # No explicit blank-the-grid pass here. The LED cache starts empty, so
         # the render below writes all sixteen pads once -- including the ones
         # that end up off, which clears whatever the previous preset or script
@@ -162,8 +162,8 @@ class SMCStepSeq(ControlSurface):
         self._detach_song_listeners()
         self._detach_clip()
         self._all_leds_off()
-        if self in SMCStepSeq._active_instances:
-            SMCStepSeq._active_instances.remove(self)
+        if self in MVave_SMC_STEPSEQ._active_instances:
+            MVave_SMC_STEPSEQ._active_instances.remove(self)
         self._ready = False
         ControlSurface.disconnect(self)
 
@@ -682,7 +682,7 @@ class SMCStepSeq(ControlSurface):
         self._log('exception in %s\n%s' % (where, traceback.format_exc()))
 
     def _log_unhandled(self, status, data1, data2):
-        # Phase 0's real payload: anything the device sends that consts.py does
+        # Phase 0's real payload: anything the device sends that MIDI_Map.py does
         # not describe, named exactly once. Capped so a mis-programmed preset
         # cannot fill Log.txt during a jam.
         signature = (status, data1)

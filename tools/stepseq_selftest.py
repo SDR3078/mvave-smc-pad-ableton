@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run SMC_StepSeq against a fake Live, on any machine.
+"""Run MVave_SMC_STEPSEQ against a fake Live, on any machine.
 
     python3 tools/stepseq_selftest.py [-v]
 
@@ -13,7 +13,7 @@ coordinate maps to which step, which note bucket a time falls in, which LED
 bytes go out and in what order, what happens when the bound clip is deleted --
 can be checked here in a second, with no controller and no DAW. What this cannot
 check is the hardware itself: the note numbers, the channel, the palette. Those
-are Phase 0, on the device, and they live in SMC_StepSeq/consts.py.
+are Phase 0, on the device, and they live in MVave_SMC_STEPSEQ/MIDI_Map.py.
 
 The stubs below implement only the slice of the Live API the sequencer touches,
 and they deliberately model the half-open [t, t + span) window semantics that
@@ -272,10 +272,17 @@ def install_stubs():
 MIDI_MAP = install_stubs()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from SMC_StepSeq import consts as C                                  # noqa: E402
-from SMC_StepSeq.smc_stepseq import (SMCStepSeq, decode_relative,    # noqa: E402
+from MVave_SMC_STEPSEQ import MIDI_Map as C                                  # noqa: E402
+from MVave_SMC_STEPSEQ.MVave_SMC_STEPSEQ import (MVave_SMC_STEPSEQ, decode_relative,    # noqa: E402
                                      lane_for_pad, step_at,
                                      VIEW_FOCUS, VIEW_OVERVIEW)
+
+# The package, the module and the class all share one name -- the convention the
+# other two scripts follow too -- and __init__.py binds the CLASS over the module
+# in the package namespace. So `import MVave_SMC_STEPSEQ.MVave_SMC_STEPSEQ as m`
+# hands back the class, not the module, and patching a flag on it silently misses.
+# sys.modules is not shadowed, so it is the reliable handle.
+SEQ_MODULE = sys.modules['MVave_SMC_STEPSEQ.MVave_SMC_STEPSEQ']
 
 
 # --------------------------------------------------------------------- helper
@@ -292,9 +299,9 @@ class SeqTest(unittest.TestCase):
     """Base: a loaded script with a bound four-beat clip."""
 
     def setUp(self):
-        SMCStepSeq._active_instances = []
+        MVave_SMC_STEPSEQ._active_instances = []
         self.c_instance = FakeCInstance()
-        self.seq = SMCStepSeq(self.c_instance)
+        self.seq = MVave_SMC_STEPSEQ(self.c_instance)
         self.song = self.seq.song()
         self.clip = FakeClip(loop_start=0.0, loop_end=4.0)
         self.song.view.select(self.clip)
@@ -417,10 +424,10 @@ class Writing(SeqTest):
         self.assertEqual(self.clip.notes[0].velocity, C.PAINT_VELOCITY - 1)
 
     def test_strike_velocity_can_be_turned_off(self):
-        # Patch the SEQUENCER module, not consts. smc_stepseq does
-        # `from .consts import *`, which copies the flag into its own namespace
-        # at import time -- rebinding it on consts afterwards reaches nothing.
-        import SMC_StepSeq.smc_stepseq as seqmod
+        # Patch the SEQUENCER module, not MIDI_Map. The script does
+        # `from .MIDI_Map import *`, which copies the flag into its own namespace
+        # at import time -- rebinding it on MIDI_Map afterwards reaches nothing.
+        seqmod = SEQ_MODULE
         original = seqmod.USE_STRIKE_VELOCITY
         try:
             seqmod.USE_STRIKE_VELOCITY = False
@@ -567,7 +574,7 @@ class Playhead(SeqTest):
         self.assertEqual(self.seq._bank, 0)       # and snapped to the playhead
 
     def test_wrap_resume_can_be_switched_off(self):
-        import SMC_StepSeq.smc_stepseq as seqmod
+        seqmod = SEQ_MODULE
         original = seqmod.FOLLOW_RESUMES_ON_WRAP
         try:
             seqmod.FOLLOW_RESUMES_ON_WRAP = False
@@ -835,7 +842,7 @@ class MidiPlumbing(SeqTest):
 # --------------------------------------------------------------------- config
 
 class Configuration(unittest.TestCase):
-    """Cheap guards on consts.py, since a typo there is a Live restart."""
+    """Cheap guards on MIDI_Map.py, since a typo there is a Live restart."""
 
     def test_sixteen_pads(self):
         self.assertEqual(len(C.PAD_NOTES), 16)
@@ -933,7 +940,7 @@ class ButtonLeds(SeqTest):
         self.assertEqual(self.btn_led(C.BTN_VIEW), C.BTN_LED_OFF)
 
     def test_button_leds_can_be_switched_off(self):
-        import SMC_StepSeq.smc_stepseq as seqmod
+        seqmod = SEQ_MODULE
         original = seqmod.BUTTON_LEDS
         try:
             seqmod.BUTTON_LEDS = False

@@ -28,7 +28,7 @@ off empty.
 
 ### And a step sequencer
 
-`SMC_StepSeq/` is a separate script on a separate pad preset. The 16 pads become
+`MVave_SMC_STEPSEQ/` is a separate script on a separate pad preset. The 16 pads become
 16 steps of one drum lane in the selected MIDI clip, with a playhead that chases
 Live's playback; a second view shows four lanes by four steps, for reading a
 kick/clap/hat/open-hat groove at a glance.
@@ -36,7 +36,7 @@ kick/clap/hat/open-hat groove at a glance.
 The clip is the only state it keeps, so Ctrl+Z undoes a step, saving the set
 saves the pattern, and a note drawn with the mouse lights up on the pads.
 
-**Running on real hardware.** Every value in `SMC_StepSeq/consts.py` is measured.
+**Running on real hardware.** Every value in `MVave_SMC_STEPSEQ/MIDI_Map.py` is measured.
 The 16 pads follow the playhead, so a 16, 32 or 64-step loop needs no paging.
 **[docs/STEPSEQ.md](docs/STEPSEQ.md)** has the design, the install, and the list
 of what still needs measuring.
@@ -72,7 +72,7 @@ script with its own setup in **[docs/STEPSEQ.md](docs/STEPSEQ.md)**.
 ```
 ├── MVave_SMC_PAD/      pads, transport, LED feedback   (copy this into Live)
 ├── MVave_SMC_KNOBS/    encoders: navigation + macros   (and this)
-├── SMC_StepSeq/        step sequencer on a second pad preset  (and this, optionally)
+├── MVave_SMC_STEPSEQ/        step sequencer on a second pad preset  (and this, optionally)
 ├── docs/
 │   ├── INSTALL.md      setup, verification, troubleshooting
 │   ├── HARDWARE.md     the measured MIDI reference — ports, notes, LED palette,
@@ -135,7 +135,7 @@ than hidden:
 Classes"** template, the long-standing starting point for custom Live Remote
 Scripts. The session, mixer, transport, zooming and view components are
 substantially his; the clip-state colours, the modifier button and every value in
-`MIDI_Map.py` are not. `MVave_SMC_KNOBS/`, `SMC_StepSeq/`, `tools/` and `docs/`
+`MIDI_Map.py` are not. `MVave_SMC_KNOBS/`, `MVave_SMC_STEPSEQ/`, `tools/` and `docs/`
 are original.
 [DEVELOPMENT.md](docs/DEVELOPMENT.md) carries a file-by-file provenance table.
 
@@ -147,4 +147,4 @@ to their owners.
 **Not yet chosen.** Because `MVave_SMC_PAD/` derives from a publicly published
 tutorial template, its licensing position is inherited rather than free to pick,
 and that should be settled before this is shared widely. `MVave_SMC_KNOBS/`,
-`SMC_StepSeq/`, `tools/` and `docs/` are original work.
+`MVave_SMC_STEPSEQ/`, `tools/` and `docs/` are original work.

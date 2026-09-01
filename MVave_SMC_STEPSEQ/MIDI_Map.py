@@ -1,7 +1,7 @@
 # Hardware and layout constants for the SMC-PAD step sequencer.
 #
 # Everything the script knows about the controller lives in this file.
-# smc_stepseq.py contains no note numbers, no CC numbers and no colour values,
+# MVave_SMC_STEPSEQ.py contains no note numbers, no CC numbers and no colour values,
 # so answering a Phase 0 question is an edit here and nowhere else.
 #
 # Two kinds of value live here and they are NOT equally trustworthy:
@@ -88,7 +88,7 @@ BTN_RIGHT = 121             # next step page;     +SHIFT lane bank up
 #      appear only on port 3 (HARDWARE.md 1.1). A Remote Script gets exactly one
 #      input port, so unless the sequencer preset moves one of them, these CCs
 #      cannot reach the same script as the pads. See the class-level
-#      _active_instances hook in smc_stepseq.py for the way out.
+#      _active_instances hook in MVave_SMC_STEPSEQ.py for the way out.
 #   2. Encoder assignments are not per pad-preset. The .spc holds exactly 16
 #      encoder records -- 2 banks of 8 (HARDWARE.md 5.2) -- so putting the
 #      sequencer's CCs on the encoders spends one of the two KNOB BANK banks
@@ -244,4 +244,4 @@ LANE_SELECT_BASE = 36       # SHIFT + pad selects pitches 36-51 in drum-rack
                             # left to right then bottom to top, so it mirrors
                             # what the rack looks like on screen
 
-LOG_PREFIX = 'SMC_StepSeq: '
+LOG_PREFIX = 'MVave_SMC_STEPSEQ: '

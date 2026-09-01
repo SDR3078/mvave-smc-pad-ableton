@@ -1,4 +1,4 @@
-# `SMC_StepSeq` — the step sequencer
+# `MVave_SMC_STEPSEQ` — the step sequencer
 
 A third Remote Script for the SMC-PAD. The 16 pads become 16 steps of one drum
 lane in the selected MIDI clip, with LED feedback and a playhead that chases
@@ -11,7 +11,7 @@ renamed to match the rest of `docs/`. The brief itself is kept verbatim as
 this file is what got built and section 4 says why.
 
 > **Status: running in Live on real hardware** (2026-08-31). Every value in
-> `consts.py` is measured rather than assumed — section 5 has the table and
+> `MIDI_Map.py` is measured rather than assumed — section 5 has the table and
 > [HARDWARE.md](HARDWARE.md) has the method. The logic is also exercised by
 > `tools/stepseq_selftest.py` (67 checks, no controller and no DAW required),
 > which is what makes a change safe to attempt without a Live restart.
@@ -41,7 +41,7 @@ while held. The arrows have no state to show and are never written.
 This needs the buttons' **feedback option turned ON in the M-Vave editor**. With
 it off the button lights from its own press and ignores the host, so the script's
 writes do nothing; with it on the button is dark unless something lights it, which
-is what this is for. `BUTTON_LEDS = False` in `consts.py` turns it off again.
+is what this is for. `BUTTON_LEDS = False` in `MIDI_Map.py` turns it off again.
 
 Whether the button LEDs take the pad palette or are simply on/off is unmeasured —
 `BTN_LED_ON` is a velocity either way, so pick from the palette in
@@ -76,7 +76,7 @@ base by 16, so the whole rack is reachable.
 **The encoder CCs are not wired.** Both knob banks are spent on device macros for
 the other script ([HARDWARE.md 4.1](HARDWARE.md)) and there is no third bank, so
 the sequencer's four CCs have nowhere to live. Paint velocity and pattern length
-are only settable in `consts.py` or with the mouse. The handlers remain, so
+are only settable in `MIDI_Map.py` or with the mouse. The handlers remain, so
 they work the moment a bank frees up.
 
 Pad colours, from the measured palette ([HARDWARE.md 3.2](HARDWARE.md)):
@@ -146,7 +146,7 @@ macros, bank 1 is deliberately left free for Live's own MIDI mapping.
 
 The sequencer works without any knob. Only paint velocity and pattern length
 become unreachable, and both have mouse equivalents in Live. If the knobs turn
-out to be worth having, `SMCStepSeq.handle_encoder_cc()` is the way in: a
+out to be worth having, `MVave_SMC_STEPSEQ.handle_encoder_cc()` is the way in: a
 sibling script on the encoder port can find the instance through the class-level
 `_active_instances` list and forward, which is exactly what `MVave_SMC_KNOBS`
 already does in the other direction to move the session box. That is a ten-line
@@ -236,9 +236,9 @@ must not be holding the port — Windows MIDI ports are exclusive.
 
 ## 6. Installing
 
-Copy `SMC_StepSeq/` into Live's Remote Scripts directory alongside the other two
+Copy `MVave_SMC_STEPSEQ/` into Live's Remote Scripts directory alongside the other two
 (see [INSTALL.md](INSTALL.md) for the path), restart Live, and add a Control
-Surface slot for `SMC_StepSeq`. Live 11 or newer: the clip API this uses
+Surface slot for `MVave_SMC_STEPSEQ`. Live 11 or newer: the clip API this uses
 (`get_notes_extended`, `add_new_notes`, `remove_notes_extended`) does not exist
 before that, and the script says so in `Log.txt` rather than rendering an empty
 grid forever.
@@ -260,7 +260,7 @@ PAD13–16 carry the first four notes. Confirm with
 
 | | |
 |---|---|
-| Control Surface | `SMC_StepSeq` |
+| Control Surface | `MVave_SMC_STEPSEQ` |
 | Input | `MIDIIN3 (SMC-PAD)` |
 | Output | `MIDIOUT3 (SMC-PAD)` |
 
@@ -281,7 +281,7 @@ toggle also plays a note through that instrument.
 
 Live's `Log.txt` is the only debugger — the script logs a line on load naming
 the channels and notes it is listening for, and logs any message it receives
-that `consts.py` does not describe, exactly once per signature. That last one is
+that `MIDI_Map.py` does not describe, exactly once per signature. That last one is
 the fastest answer to "what is this thing actually sending?".
 
 ## 7. The self-test
@@ -298,7 +298,7 @@ controller just stops responding and the only evidence is a traceback in
 
 It covers the coordinate maps, the step bucketing, the write path, LED bytes and
 diffing, playhead gating, page clamping, re-binding, clip deletion, and the
-consts file's own sanity. It cannot cover the hardware — note numbers, channels,
+map file's own sanity. It cannot cover the hardware — note numbers, channels,
 the palette. That is section 5, on the device.
 
 ## 8. Deliberately not built

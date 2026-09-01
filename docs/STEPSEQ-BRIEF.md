@@ -29,7 +29,7 @@
 
 ## 3. Phase 0 — Hardware discovery (do this FIRST, interactively with me)
 
-Budget RGB implementations vary, so these experiments gate the constants. Walk me through them one at a time; I'll be at the controller with a MIDI monitor (MIDI-OX or Live's own MIDI indicators). Record every answer in `consts.py` and in the TBD table below.
+Budget RGB implementations vary, so these experiments gate the constants. Walk me through them one at a time; I'll be at the controller with a MIDI monitor (MIDI-OX or Live's own MIDI indicators). Record every answer in `MIDI_Map.py` and in the TBD table below.
 
 1. **Program preset 3 in CubeSuite** (M-Vave's config app) per Section 4, then verify with the monitor:
    - Which **USB port** does preset 3 transmit on? (Expected: the generic-MIDI port, but confirm.)
@@ -72,16 +72,16 @@ Everything on **channel 16**:
 
 ```
 smc-stepseq/
-├── SMC_StepSeq/
+├── MVave_SMC_STEPSEQ/
 │   ├── __init__.py          # create_instance(c_instance)
-│   ├── smc_stepseq.py       # SMCStepSeq(ControlSurface)
-│   └── consts.py            # channel, notes, CCs, COLOR map, STEP length
+│   ├── MVave_SMC_STEPSEQ.py       # MVave_SMC_STEPSEQ(ControlSurface)
+│   └── MIDI_Map.py            # channel, notes, CCs, COLOR map, STEP length
 ├── README.md                # install, port setup, usage cheatsheet
 └── docs/decisions.md        # this brief + Phase 0 measurements
 ```
 
-- **Install path (Windows):** `%USERPROFILE%\Documents\Ableton\User Library\Remote Scripts\SMC_StepSeq\` (Live 11+ scans the User Library).
-- **Live Preferences → Link/Tempo/MIDI:** add Control Surface `SMC_StepSeq`; set Input *and* Output to the SMC-PAD port pair measured in Phase 0. On that port's MIDI Ports rows, switch **Track = Off** (belt and braces: forwarded channel-16 notes are consumed by the script anyway, but this guarantees pad presses never play an instrument). Leave the ports used by presets 1–2 exactly as they are.
+- **Install path (Windows):** `%USERPROFILE%\Documents\Ableton\User Library\Remote Scripts\MVave_SMC_STEPSEQ\` (Live 11+ scans the User Library).
+- **Live Preferences → Link/Tempo/MIDI:** add Control Surface `MVave_SMC_STEPSEQ`; set Input *and* Output to the SMC-PAD port pair measured in Phase 0. On that port's MIDI Ports rows, switch **Track = Off** (belt and braces: forwarded channel-16 notes are consumed by the script anyway, but this guarantees pad presses never play an instrument). Leave the ports used by presets 1–2 exactly as they are.
 - **Debugging:** `self.log_message(...)` writes to `%APPDATA%\Ableton\Live x.x.x\Preferences\Log.txt`. Tail it after every reload. Wrap `receive_midi` and all listener callbacks in try/except + log — an uncaught exception silently kills the script until reload.
 
 ## 6. Implementation spec
@@ -90,12 +90,12 @@ smc-stepseq/
 
 ```python
 # __init__.py
-from .smc_stepseq import SMCStepSeq
+from .MVave_SMC_STEPSEQ import MVave_SMC_STEPSEQ
 def create_instance(c_instance):
-    return SMCStepSeq(c_instance)
+    return MVave_SMC_STEPSEQ(c_instance)
 ```
 
-`SMCStepSeq` extends `_Framework.ControlSurface.ControlSurface` (still shipped in Live 11/12; simpler than v2/v3 for a single-surface script). On `__init__`: log a hello, attach song-view listeners, attempt first clip bind, full render. On `disconnect()`: remove every listener (guard each with `*_has_listener`), send all-LEDs-off, then call super.
+`MVave_SMC_STEPSEQ` extends `_Framework.ControlSurface.ControlSurface` (still shipped in Live 11/12; simpler than v2/v3 for a single-surface script). On `__init__`: log a hello, attach song-view listeners, attempt first clip bind, full render. On `disconnect()`: remove every listener (guard each with `*_has_listener`), send all-LEDs-off, then call super.
 
 ### 6.2 MIDI routing
 

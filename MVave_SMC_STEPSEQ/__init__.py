@@ -1,10 +1,10 @@
 import Live
-from .smc_stepseq import SMCStepSeq
+from .MVave_SMC_STEPSEQ import MVave_SMC_STEPSEQ
 
 
 def create_instance(c_instance):
     """ Creates and returns the M-Vave SMC-PAD step sequencer script """
-    return SMCStepSeq(c_instance)
+    return MVave_SMC_STEPSEQ(c_instance)
 
 # local variables:
 # tab-width: 4
