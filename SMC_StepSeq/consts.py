@@ -182,6 +182,20 @@ LANE_COLORS = (5, 14, 21, 24)
 # is alive, select a clip" light.
 COLOR_NO_CLIP = 0
 
+# Button LEDs.
+#
+# These only do anything if the buttons' feedback option is ON in the M-Vave
+# editor: with it off the button lights locally on its own press and ignores what
+# the host sends. With it on, the button is dark unless something lights it --
+# which is why this exists, since the script otherwise writes only to the pads.
+#
+# UNMEASURED: whether the button LEDs take the pad palette or are simply on/off.
+# These are velocities either way, so if the buttons turn out to be colour
+# capable, pick from the palette in HARDWARE.md 3.2.
+BUTTON_LEDS = True
+BTN_LED_ON = 127
+BTN_LED_OFF = 0
+
 
 # ------------------------------------------------------------------- sequencer
 

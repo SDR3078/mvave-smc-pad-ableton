@@ -33,6 +33,19 @@ this file is what got built and section 4 says why.
 | SHIFT + `<` `>` | **bank the lane picker by 16 pitches** | same |
 | stop button | switch view | switch view |
 | play button | start/stop Live's transport | same |
+
+**Three of the five buttons show state on their own LEDs** — play lit while the
+transport runs, the view button lit while you are in overview, the modifier lit
+while held. The arrows have no state to show and are never written.
+
+This needs the buttons' **feedback option turned ON in the M-Vave editor**. With
+it off the button lights from its own press and ignores the host, so the script's
+writes do nothing; with it on the button is dark unless something lights it, which
+is what this is for. `BUTTON_LEDS = False` in `consts.py` turns it off again.
+
+Whether the button LEDs take the pad palette or are simply on/off is unmeasured —
+`BTN_LED_ON` is a velocity either way, so pick from the palette in
+[HARDWARE.md](HARDWARE.md) 3.2 if they turn out to be colour capable.
 | Knob CC 20–23 | **unreachable on this hardware — see below** | same |
 
 **The window follows the playhead.** The sixteen pads show the sixteen steps

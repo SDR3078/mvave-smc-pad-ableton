@@ -315,6 +315,17 @@ class SeqTest(unittest.TestCase):
                 state[note] = velocity
         return [state[note] for note in C.LED_NOTES]
 
+    def btn_led(self, note):
+        """The velocity last sent to one button, or None if never written."""
+        last = None
+        for status, sent_note, velocity in self.seq.sent:
+            if sent_note == note:
+                last = velocity
+        return last
+
+    def btn_writes(self, note):
+        return [v for _, n, v in self.seq.sent if n == note]
+
 
 # ------------------------------------------------------------- pure functions
 
@@ -809,6 +820,74 @@ class Configuration(unittest.TestCase):
 
     def test_knob_mode_is_one_of_the_two_schemes(self):
         self.assertIn(C.KNOB_MODE, ('centre', 'twos'))
+
+
+
+class ButtonLeds(SeqTest):
+    """The five buttons show state, when the device is set to accept feedback."""
+
+    def test_play_button_lights_with_the_transport(self):
+        self.seq.sent = []
+        self.button(C.BTN_PLAY)                      # starts the transport
+        self.assertTrue(self.song.is_playing)
+        self.assertEqual(self.btn_led(C.BTN_PLAY), C.BTN_LED_ON)
+        self.seq.sent = []
+        self.button(C.BTN_PLAY)                      # stops it again
+        self.assertEqual(self.btn_led(C.BTN_PLAY), C.BTN_LED_OFF)
+
+    def test_view_button_lights_in_overview(self):
+        self.seq.sent = []
+        self.button(C.BTN_VIEW)
+        self.assertEqual(self.seq._view, VIEW_OVERVIEW)
+        self.assertEqual(self.btn_led(C.BTN_VIEW), C.BTN_LED_ON)
+        self.seq.sent = []
+        self.button(C.BTN_VIEW)
+        self.assertEqual(self.btn_led(C.BTN_VIEW), C.BTN_LED_OFF)
+
+    def test_modifier_lights_while_held(self):
+        self.seq.sent = []
+        self.button(C.BTN_SHIFT, True)
+        self.assertEqual(self.btn_led(C.BTN_SHIFT), C.BTN_LED_ON)
+        self.seq.sent = []
+        self.button(C.BTN_SHIFT, False)
+        self.assertEqual(self.btn_led(C.BTN_SHIFT), C.BTN_LED_OFF)
+
+    def test_button_leds_are_diffed_not_resent(self):
+        # _paint() runs on every playhead step. Without the cache each step would
+        # rewrite all three buttons, which is the bulk-write the device's input
+        # buffer does not survive.
+        self.clip.play(0 * C.STEP)
+        self.seq.sent = []
+        for step in range(1, 8):
+            self.clip.play(step * C.STEP)
+        self.assertEqual(self.btn_writes(C.BTN_PLAY), [])
+        self.assertEqual(self.btn_writes(C.BTN_VIEW), [])
+
+    def test_the_paging_buttons_are_never_written(self):
+        # Only three of the five carry state; the arrows have none to show.
+        self.button(C.BTN_PLAY)
+        self.button(C.BTN_VIEW)
+        self.button(C.BTN_LEFT)
+        self.button(C.BTN_RIGHT)
+        self.assertEqual(self.btn_writes(C.BTN_LEFT), [])
+        self.assertEqual(self.btn_writes(C.BTN_RIGHT), [])
+
+    def test_all_leds_off_clears_the_buttons(self):
+        self.button(C.BTN_VIEW)                      # light one
+        self.seq.sent = []
+        self.seq._all_leds_off()
+        self.assertEqual(self.btn_led(C.BTN_VIEW), C.BTN_LED_OFF)
+
+    def test_button_leds_can_be_switched_off(self):
+        import SMC_StepSeq.smc_stepseq as seqmod
+        original = seqmod.BUTTON_LEDS
+        try:
+            seqmod.BUTTON_LEDS = False
+            self.seq.sent = []
+            self.button(C.BTN_VIEW)
+            self.assertEqual(self.btn_writes(C.BTN_VIEW), [])
+        finally:
+            seqmod.BUTTON_LEDS = original
 
 
 if __name__ == '__main__':

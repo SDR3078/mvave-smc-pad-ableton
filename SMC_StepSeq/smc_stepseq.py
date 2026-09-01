@@ -124,6 +124,7 @@ class SMCStepSeq(ControlSurface):
         self._follow = FOLLOW_PLAYHEAD
         self._lane_base = LANE_SELECT_BASE
         self._paint_velocity = PAINT_VELOCITY
+        self._btn_led = {}                      # what each button was last told
         self._grid = [COLOR_STEP_OFF] * 16      # what the clip says
         self._on = [False] * 16                 # which of those hold a note
         self._led = [None] * 16                 # what the device was last told
@@ -380,6 +381,7 @@ class SMCStepSeq(ControlSurface):
     def _on_button(self, number, pressed):
         if number == BTN_SHIFT:
             self._shift = pressed
+            self._paint_buttons()       # lights while held, clears on release
             return
         if not pressed:
             return
@@ -454,6 +456,7 @@ class SMCStepSeq(ControlSurface):
             song.stop_playing()
         else:
             song.start_playing()
+        self._paint_buttons()
 
     def _set_length(self, steps):
         clip = self._clip
@@ -609,6 +612,34 @@ class SMCStepSeq(ControlSurface):
             if self._led[index] != color:
                 self._led[index] = color
                 self._send_led(index, color)
+        self._paint_buttons()
+
+    def _paint_buttons(self):
+        """Show state on the buttons: transport, view, and the held modifier.
+
+        Driven from _paint() rather than from a song listener. _paint() runs on
+        every playhead step, so the transport LED follows within one step of the
+        transport moving, and every button press repaints directly. That avoids
+        adding an is_playing listener whose attach/detach lifecycle would be one
+        more thing to get right against an API this file cannot test against.
+        The visible cost: starting the transport while no clip is playing leaves
+        the play LED stale until the next press or selection change.
+        """
+        if not BUTTON_LEDS:
+            return
+        try:
+            playing = bool(self.song().is_playing)
+        except Exception:
+            playing = False
+        for note, on in ((BTN_PLAY, playing),
+                         (BTN_VIEW, self._view == VIEW_OVERVIEW),
+                         (BTN_SHIFT, self._shift)):
+            if note is None or note < 0:
+                continue
+            color = BTN_LED_ON if on else BTN_LED_OFF
+            if self._btn_led.get(note) != color:
+                self._btn_led[note] = color
+                self._send_midi((0x90 | BUTTON_CHANNEL, note, color))
 
     def _send_led(self, index, color):
         # Note-on, always. This device ignores a real note-off entirely and
@@ -622,6 +653,11 @@ class SMCStepSeq(ControlSurface):
         for index in range(16):
             self._led[index] = COLOR_STEP_OFF
             self._send_led(index, COLOR_STEP_OFF)
+        if BUTTON_LEDS:
+            for note in (BTN_PLAY, BTN_VIEW, BTN_SHIFT):
+                if note is not None and note >= 0:
+                    self._btn_led[note] = BTN_LED_OFF
+                    self._send_midi((0x90 | BUTTON_CHANNEL, note, BTN_LED_OFF))
 
     # ---------------------------------------------------------------- logging
 
