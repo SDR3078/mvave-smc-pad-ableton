@@ -370,7 +370,7 @@ depending on a `MapMode` constant whose name varies by host version.
 > Both files agree with the constants the scripts use, so they double as a
 > regression fixture.
 
-`Ableton.spc` is what the M-Vave editor writes out. Binary, **no magic bytes, no
+A `.spc` file is what the M-Vave editor writes out, one per preset. Binary, **no magic bytes, no
 header, no version field**. It is three fixed-size record sections back to back.
 
 ### 5.1 How the segmentation was confirmed
