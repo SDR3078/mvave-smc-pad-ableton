@@ -41,24 +41,35 @@ from _Framework.DeviceComponent import DeviceComponent
 CHANNEL = 0                                     # MIDI channel 1
 CENTRE = 64
 
-# Navigation -- bank 2, knobs 1 and 2.
-CC_TRACK = 38                                   # box across tracks
-CC_SCENE = 39                                   # box through scenes
+# Navigation -- bank 2, knobs 1 and 2 (the BOTTOM pair; the device numbers its
+# encoders bottom-up, so encoder 1 is bottom-left and encoder 7 is top-left).
+CC_TRACK = 17                                   # box across tracks
+CC_SCENE = 18                                   # box through scenes
 NAV_CCS = (CC_TRACK, CC_SCENE)
 
 # CC -> macro number, 1-based. Macro N is device.parameters[N]; index 0 is the
 # device on/off switch, so the numbering lines up with no offset arithmetic.
 #
-# The knob-to-CC half of this comes from the measurement, not from the printed
-# numbers: bank 1 runs 7,8,5,6,3,4,1,2 across encoders 1-8 and bank 2 runs
-# 38-45 ascending. Combined with the requested knob order, bank 1 lands macro N
-# on CC N exactly -- a coincidence of the two orderings, not a rule. Re-measure
-# before trusting it after any editor change.
+# Re-measured 2026-08-31 after the device was renumbered: CC number now equals
+# macro number for all fourteen, so this table is the identity function. That is
+# by design, not luck -- the CCs were chosen to make it so. It survives only as
+# long as the device keeps that numbering, which is why it stays an explicit map
+# rather than becoming arithmetic: the next editor change can break the identity
+# without breaking the file.
+#
+# The physical layout is 2 wide by 4 tall, numbered BOTTOM-UP. Reading the panel
+# top-left to bottom-right is therefore encoders 7,8,5,6,3,4,1,2, which is why
+# the macros run in that order rather than 1..8:
+#
+#     enc 7  enc 8        macro 1  macro 2     <- top
+#     enc 5  enc 6        macro 3  macro 4
+#     enc 3  enc 4        macro 5  macro 6
+#     enc 1  enc 2        macro 7  macro 8     <- bottom   (bank 2: nav)
 MACRO_BY_CC = {
-    # bank 1: knobs 7, 8, 5, 6, 3, 4, 1, 2  ->  macros 1-8
+    # bank 1: encoders 7, 8, 5, 6, 3, 4, 1, 2  ->  macros 1-8
     1: 1,   2: 2,   3: 3,   4: 4,   5: 5,   6: 6,   7: 7,   8: 8,
-    # bank 2: knobs 7, 8, 5, 6, 3, 4  ->  macros 9-14
-    44: 9,  45: 10, 42: 11, 43: 12, 40: 13, 41: 14,
+    # bank 2: encoders 7, 8, 5, 6, 3, 4  ->  macros 9-14
+    9: 9,   10: 10, 11: 11, 12: 12, 13: 13, 14: 14,
 }
 
 # One click moves this fraction of a parameter's range. A rack macro is 0-127,
