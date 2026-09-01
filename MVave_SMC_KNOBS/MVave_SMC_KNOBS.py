@@ -65,11 +65,24 @@ NAV_CCS = (CC_TRACK, CC_SCENE)
 #     enc 5  enc 6        macro 3  macro 4
 #     enc 3  enc 4        macro 5  macro 6
 #     enc 1  enc 2        macro 7  macro 8     <- bottom   (bank 2: nav)
+# Encoders are PER-PRESET, so the two presets send different CCs from the same
+# knobs -- and they were numbered so that no CC means two things. That is what
+# lets one flat table serve both presets with no mode detection:
+#
+#   CC 1-14   macros 1-14      both presets, identical
+#   CC 15-16  macros 15-16     sequencer preset only (bank 2, bottom pair)
+#   CC 17-18  session box X/Y  launcher preset only  (bank 2, bottom pair)
+#
+# The bottom pair is the only difference. The launcher needs grid navigation; the
+# sequencer has no session box to move -- it pages with the arrow buttons -- so
+# there those two knobs become the last two macros of a 16-macro rack instead.
 MACRO_BY_CC = {
     # bank 1: encoders 7, 8, 5, 6, 3, 4, 1, 2  ->  macros 1-8
     1: 1,   2: 2,   3: 3,   4: 4,   5: 5,   6: 6,   7: 7,   8: 8,
     # bank 2: encoders 7, 8, 5, 6, 3, 4  ->  macros 9-14
     9: 9,   10: 10, 11: 11, 12: 12, 13: 13, 14: 14,
+    # bank 2 bottom pair, sequencer preset only  ->  macros 15-16
+    15: 15, 16: 16,
 }
 
 # One click moves this fraction of a parameter's range. A rack macro is 0-127,
