@@ -864,19 +864,46 @@ which sends no CCs. Harmless, and see
 value that on this controller's palette would be pastel orange. `SCENELAUNCH` is
 all `-1`, so no scene launch buttons exist and the value is never sent.
 
+### Verified on hardware — Live 11.3.43, 2026-09-03
+
+Read out of `Log.txt` after a session with all three scripts loaded and a MIDI
+clip selected in sequencer mode. Each of these was previously an assumption the
+code guarded against; the guards stayed silent, which is what settles them. The
+diagnostics quoted are the exact strings to grep for if a future Live disagrees.
+
+- **The cross-script lookup works.** `_bank()` ran — the log carries
+  `first nav CC` and no `cannot import MVave_SMC_PAD` or `is not loaded`. This
+  was the one part of the design with no offline test.
+- **`DeviceComponent` exposes `device` as a *method*.** `_current_device()` ran
+  on the first macro turn and never logged
+  `DeviceComponent exposes no device getter`, so the write-time resolution is
+  live rather than falling back to the cached target.
+- **`SessionComponent`'s offsets and `width()`/`height()` are readable**, via the
+  method spelling — neither `could not read the session offsets` nor
+  `could not read the session box size` has ever appeared.
+- **`Clip` exposes `add_loop_start_listener` / `add_loop_end_listener`.** A clip
+  was bound and `clip has no add_*_listener()` did not fire, so a mouse drag on
+  the loop brace does redraw the grid.
+- **All five `ClipSlotComponent` colour setters exist.**
+  `ClipSlotComponent has no ...` has never appeared in any session.
+- **`get_notes_extended`'s window is half-open**, `[t, t + STEP)`. Tested by
+  hand: with a note on step 5, pressing the empty step 4 adds a note there and
+  leaves step 5 alone. Had the window been closed, pad 4 would have deleted its
+  neighbour instead — the one assumption in `tools/stepseq_selftest.py`'s fakes
+  that the "a lit step is a step pressing clears" guarantee rests on.
+- **No guarded callback has ever raised.** `exception in` appears nowhere, and
+  the sequencer has never logged an `unmapped:` message.
+
 ### Not verified
 
-Flagged as unverified in the source, and still unverified:
-
-- **The cross-script lookup could not be tested outside Live.** A
-  `cannot import MVave_SMC_PAD` or `is not loaded` line in `Log.txt` means it
-  failed. That is the one part of this design that had no offline test.
 - **Whether `SessionComponent` takes its track list from its mixer** in this
   `_Framework` version, which decides whether the encoder's clamp ceiling matches
-  the box's real range. See
+  the box's real range. The log cannot show this; it would present as the box
+  refusing to bank onto the return tracks. See
   [the session handoff section](#how-the-knob-script-reaches-the-pad-scripts-session-box).
-- **Which `ClipSlotComponent` setters exist** in any given Live version — hence
-  the `getattr` guard rather than a version check.
-- Device-side questions (the `.spc` flag byte as a port selector, what the
-  VELOCITY 1–4 settings do) are recorded in [HARDWARE.md](HARDWARE.md) and
-  [FINDINGS.md](FINDINGS.md); neither affects the scripts.
+- **Whether a deleted LOM object raises on every attribute access.** The
+  deleted-clip guards and the self-test's `FakeClip.__getattribute__` both assume
+  it; no session has yet deleted a clip while the sequencer held it.
+- Device-side questions (the `.spc` flag byte, what the VELOCITY 1–4 settings do)
+  are recorded in [HARDWARE.md](HARDWARE.md) and [FINDINGS.md](FINDINGS.md);
+  neither affects the scripts.

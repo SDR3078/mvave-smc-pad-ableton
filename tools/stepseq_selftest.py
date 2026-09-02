@@ -19,22 +19,22 @@ The stubs below implement only the slice of the Live API the sequencer touches,
 and they deliberately model the half-open [t, t + span) window semantics that
 the script's floor-bucketing assumes.
 
-UNVERIFIED, and worth knowing before you trust a green run: three Live
-behaviours are *asserted* by these fakes rather than checked against Live, so
-any test whose verdict depends on them inherits the assumption --
+Live behaviours these fakes *assert* rather than check. A green run inherits
+whichever of these is wrong, so they are listed rather than buried:
 
   * get_notes_extended/remove_notes_extended use the half-open window
-    [from_time, from_time + span) and the pitch range [from_pitch, +span);
-  * add_new_notes fires the notes listener exactly once, synchronously;
-  * MidiNoteSpecification accepts these keyword arguments;
+    [from_time, from_time + span) -- CONFIRMED on Live 11.3.43, 2026-09-03, by
+    hand: a note on step 5, then pressing the empty step 4, adds to step 4 and
+    leaves step 5 alone. A closed window would have deleted the neighbour. The
+    "a lit step is a step pressing clears" guarantee rests on this one.
+  * add_new_notes fires the notes listener exactly once, synchronously -- still
+    assumed; the suite would not notice a second fire.
+  * MidiNoteSpecification accepts these keyword arguments -- de facto confirmed,
+    since steps are written on real hardware.
   * a deleted LOM object raises on EVERY attribute access, methods included --
-    which is what FakeClip.__getattribute__ models, and what both the
-    deleted-clip test and _detach_clip's block-level guard rest on.
-
-The "a lit step is a step pressing clears" guarantee rests on the first of
-them. If Live's window turned out to be closed at the end, pressing an empty
-step next to a set one would delete the neighbour, and nothing here would say
-so.
+    STILL ASSUMED. FakeClip.__getattribute__ models it, and both the
+    deleted-clip test and _detach_clip's block-level guard rest on it. No
+    session has yet deleted a clip while the sequencer held it.
 """
 
 import contextlib
