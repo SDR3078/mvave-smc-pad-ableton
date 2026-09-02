@@ -184,17 +184,27 @@ class MVave_SMC_KNOBS(ControlSurface):
         """
         component = self._device
         if component is not None:
-            getter = getattr(component, 'device', None)
-            if callable(getter):
-                return getter()
-            if getter is not None:
-                # Spelled as a property on this version -- getattr already gave
-                # us the device, and calling it would raise TypeError inside a
-                # MIDI callback. Same dance as _probe_value() below.
-                return getter
-            private = getattr(component, '_device', None)
-            if private is not None:
-                return private
+            # A SENTINEL, not None, because getattr's default cannot tell an
+            # absent attribute from a getter legitimately answering None. That
+            # distinction is the whole game here: "no device is selected" is a
+            # real answer and must be returned, while falling through to the
+            # cache on it hands back a device the component has already let go
+            # -- which is the dangling reference this method exists to avoid,
+            # and it happens on every fresh start before the first track click.
+            missing = object()
+            getter = getattr(component, 'device', missing)
+            if getter is not missing:
+                # Method on most versions, property on others. Calling a
+                # property's value would raise TypeError in a MIDI callback.
+                return getter() if callable(getter) else getter
+            private = getattr(component, '_device', missing)
+            if private is not missing:
+                # Reached only when the public name is absent entirely. An
+                # explicit None is still an answer; anything else has to look
+                # like a device before the macros write to it, since this is
+                # private state whose shape no version guarantees.
+                if private is None or hasattr(private, 'parameters'):
+                    return private
         # Nothing on the component exposes its device, so fall back to whatever
         # the last TRACK change cached. That is the pre-fix behaviour, with the
         # pre-fix bugs -- the knobs will write to a device that goes stale the
@@ -315,7 +325,14 @@ class MVave_SMC_KNOBS(ControlSurface):
         # defeats the latch entirely: a traceback per MIDI message, hundreds
         # per knob turn, and an unbounded set entry for each one.
         text = traceback.format_exc()
-        signature = (where, text.strip().rsplit('\n', 1)[-1])
+        # Keyed on the deepest frame as well as the exception line. `where` is
+        # coarse -- receive_midi covers both the session-box path and the device
+        # path -- and the likeliest fault in either is the same message, so a
+        # key without the frame silently discards whichever failed second.
+        lines = text.strip().split('\n')
+        frame = next((l.strip() for l in reversed(lines)
+                      if l.strip().startswith('File "')), '')
+        signature = (where, frame, lines[-1])
         if signature in self._exceptions_logged or len(self._exceptions_logged) >= 32:
             return
         self._exceptions_logged.add(signature)
