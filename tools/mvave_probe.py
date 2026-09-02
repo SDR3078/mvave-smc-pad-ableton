@@ -203,6 +203,10 @@ def cmd_light(args):
             _paced(port, [mido.Message("note_on", channel=ch, note=n, velocity=args.velocity)
                           for n in range(args.lo, args.hi + 1)])
             time.sleep(args.hold)
+        except KeyboardInterrupt:
+            # Swallowed as --sweep does, so the closing prompt still prints and
+            # the launcher does not report a non-zero exit and pause.
+            pass
         finally:
             # Ctrl+C during the hold used to leave the whole grid lit, needing a
             # separate --clear run. --sweep already handled this.
@@ -475,6 +479,27 @@ def bounded_int(low, high, what):
     return parse
 
 
+def bounded_float(low, high, what):
+    """Like bounded_int, for the one flag that is a duration.
+
+    --hold reaches time.sleep() after the port is open, and in --sweep the
+    resulting ValueError is not caught by `except KeyboardInterrupt`, so
+    _send_all_off never runs and the whole block stays lit. nan and inf get
+    through a bare float() and fail the same way.
+    """
+    def parse(text):
+        try:
+            value = float(text)
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                "%s must be a number, got %r" % (what, text))
+        if not (value == value and low <= value <= high):   # value != value -> nan
+            raise argparse.ArgumentTypeError(
+                "%s must be between %g and %g, got %r" % (what, low, high, text))
+        return value
+    return parse
+
+
 def velocity_list(text):
     if text == "all":
         return list(range(1, 128))
@@ -509,7 +534,8 @@ def main():
                    help="highest note to touch")
     p.add_argument("--velocity", type=bounded_int(0, 127, "--velocity"), default=127,
                    help="velocity for --light/--sweep")
-    p.add_argument("--hold", type=float, default=3.0, help="seconds to hold each step")
+    p.add_argument("--hold", type=bounded_float(0.0, 3600.0, "--hold"),
+                   default=3.0, help="seconds to hold each step")
     p.add_argument("--step", type=bounded_int(1, 128, "--step"), default=16,
                    help="block size for --sweep")
     p.add_argument("--seconds", type=bounded_int(1, 86400, "--seconds"), default=60,
@@ -530,6 +556,11 @@ def main():
         mode.add_argument("--" + flag, dest="mode", action="store_const", const=fn)
 
     args = p.parse_args()
+    if args.lo > args.hi:
+        # Individually legal, jointly empty: range(100, 6) sends nothing, and
+        # every mode still prints its "did anything light up?" prompt. The
+        # human watches a dark grid and records the wrong answer.
+        p.error("--lo (%d) must not exceed --hi (%d)" % (args.lo, args.hi))
     args.mode(args)
 
 
