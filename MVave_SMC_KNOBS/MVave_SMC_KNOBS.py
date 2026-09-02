@@ -107,6 +107,7 @@ class MVave_SMC_KNOBS(ControlSurface):
     def __init__(self, c_instance):
         ControlSurface.__init__(self, c_instance)
         self._logged = set()
+        self._exceptions_logged = set()
         self._first_nav_logged = False
         self._first_macro_logged = False
         self._device_logged = False
@@ -140,7 +141,15 @@ class MVave_SMC_KNOBS(ControlSurface):
 
     def _follow_selected_track(self):
         # Follow the selection: the same knobs, whatever track you click on.
-        ControlSurface._on_selected_track_changed(self)
+        #
+        # The superclass call gets its OWN guard, because everything below it is
+        # this script's rebinding and a framework failure must not cancel it --
+        # otherwise one raise pins the write target to the previous track for
+        # the rest of the session, logged once and never revisited.
+        try:
+            ControlSurface._on_selected_track_changed(self)
+        except Exception:
+            self._log_exception('ControlSurface._on_selected_track_changed')
         track = self.song().view.selected_track
         device_to_select = track.view.selected_device
         if device_to_select is None and len(track.devices) > 0:
@@ -174,9 +183,28 @@ class MVave_SMC_KNOBS(ControlSurface):
         DeviceComponent has no device() getter.
         """
         component = self._device
-        getter = getattr(component, 'device', None) if component is not None else None
-        if callable(getter):
-            return getter()
+        if component is not None:
+            getter = getattr(component, 'device', None)
+            if callable(getter):
+                return getter()
+            if getter is not None:
+                # Spelled as a property on this version -- getattr already gave
+                # us the device, and calling it would raise TypeError inside a
+                # MIDI callback. Same dance as _probe_value() below.
+                return getter
+            private = getattr(component, '_device', None)
+            if private is not None:
+                return private
+        # Nothing on the component exposes its device, so fall back to whatever
+        # the last TRACK change cached. That is the pre-fix behaviour, with the
+        # pre-fix bugs -- the knobs will write to a device that goes stale the
+        # moment you pick another one on the same track. Say so once: without
+        # this line Log.txt cannot tell you which of the two worlds you are in,
+        # and the whole point of resolving at write time is silently lost.
+        self._log_once('DeviceComponent exposes no device getter -- the macros '
+                       'fall back to the device cached at the last track change, '
+                       'which goes stale if you select another device on the '
+                       'same track')
         return self._target_device
 
     def _adjust_macro(self, macro, delta):
@@ -280,9 +308,18 @@ class MVave_SMC_KNOBS(ControlSurface):
             self.log_message('MVave_SMC_KNOBS: ' + message)
 
     def _log_exception(self, where):
-        # Through _log_once, so a fault that repeats on every one of the
-        # hundreds of messages a single knob turn produces is written once.
-        self._log_once('exception in %s\n%s' % (where, traceback.format_exc()))
+        # Keyed on the last traceback line -- the exception type and message --
+        # and capped, exactly as MVave_SMC_STEPSEQ does. Routing the whole
+        # traceback through _log_once keys on text that varies with the
+        # exception's own message, so a fault whose text changes per occurrence
+        # defeats the latch entirely: a traceback per MIDI message, hundreds
+        # per knob turn, and an unbounded set entry for each one.
+        text = traceback.format_exc()
+        signature = (where, text.strip().rsplit('\n', 1)[-1])
+        if signature in self._exceptions_logged or len(self._exceptions_logged) >= 32:
+            return
+        self._exceptions_logged.add(signature)
+        self.log_message('MVave_SMC_KNOBS: exception in %s\n%s' % (where, text))
 
     def _bank(self, d_track, d_scene):
         session = self._pad_session()
@@ -295,8 +332,8 @@ class MVave_SMC_KNOBS(ControlSurface):
             track_count = len(song.tracks)
         scene_count = len(song.scenes)
 
-        track_offset = self._offset(session, 'track_offset', '_track_offset')
-        scene_offset = self._offset(session, 'scene_offset', '_scene_offset')
+        track_offset = self._probe_value(session, 'track_offset', '_track_offset')
+        scene_offset = self._probe_value(session, 'scene_offset', '_scene_offset')
         if track_offset is None or scene_offset is None:
             self._log_once('could not read the session offsets')
             return
@@ -304,12 +341,22 @@ class MVave_SMC_KNOBS(ControlSurface):
         # Clamped here rather than left to set_offsets, which asserts on a
         # negative offset -- an assert inside a MIDI callback takes the script
         # down mid-jam.
-        new_track = _clamp(track_offset + d_track, track_count - session.width())
-        new_scene = _clamp(scene_offset + d_scene, scene_count - session.height())
+        # Probed like the offsets above: this SessionComponent's getters are
+        # methods on most _Framework versions and plain attributes on others,
+        # and hardening only half of them left width()/height() raising
+        # TypeError -- which receive_midi's guard would now swallow, killing
+        # both navigation encoders quietly instead of loudly.
+        width = self._probe_value(session, 'width', '_num_tracks')
+        height = self._probe_value(session, 'height', '_num_scenes')
+        if width is None or height is None:
+            self._log_once('could not read the session box size')
+            return
+        new_track = _clamp(track_offset + d_track, track_count - width)
+        new_scene = _clamp(scene_offset + d_scene, scene_count - height)
         if (new_track, new_scene) != (track_offset, scene_offset):
             session.set_offsets(new_track, new_scene)
 
-    def _offset(self, session, method_name, attr_name):
+    def _probe_value(self, session, method_name, attr_name):
         # _Framework exposes these as methods in most versions and as bare
         # attributes in others, and it is not on the machine this was written
         # on, so try both rather than guess.
