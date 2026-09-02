@@ -26,7 +26,10 @@ any test whose verdict depends on them inherits the assumption --
   * get_notes_extended/remove_notes_extended use the half-open window
     [from_time, from_time + span) and the pitch range [from_pitch, +span);
   * add_new_notes fires the notes listener exactly once, synchronously;
-  * MidiNoteSpecification accepts these keyword arguments.
+  * MidiNoteSpecification accepts these keyword arguments;
+  * a deleted LOM object raises on EVERY attribute access, methods included --
+    which is what FakeClip.__getattribute__ models, and what both the
+    deleted-clip test and _detach_clip's block-level guard rest on.
 
 The "a lit step is a step pressing clears" guarantee rests on the first of
 them. If Live's window turned out to be closed at the end, pressing an empty
@@ -110,6 +113,11 @@ class FakeClip(FakeListenable):
     def _check(self):
         if self.dead:
             raise RuntimeError('clip has been deleted')
+
+    def set_loop_start(self, value):
+        """Drag the FRONT of the brace. Fires loop_start and nothing else."""
+        self.loop_start = value
+        self._fire('loop_start')
 
     def set_loop_end(self, value):
         """Drag the loop brace the way the mouse does: no note changes at all.
@@ -570,15 +578,42 @@ class Rendering(SeqTest):
         self.assertEqual(self.leds()[5], C.COLOR_STEP_OFF)
 
     def test_the_render_and_the_write_path_agree_on_the_last_step(self):
-        # A loop length that is not a whole number of steps used to render step
-        # 17 dark while toggle_step still accepted it: a dark pad that writes.
-        self.clip.loop_end = 4.3                    # 17 steps by _step_count()
-        self.press(0)
-        lit = [i for i, c in enumerate(self.leds()) if c == C.COLOR_STEP_ON]
-        self.seq.sent = []
-        self.seq.toggle_step(C.DEFAULT_LANE, 17)    # one past the last step
+        # A loop length that is not a whole number of steps. [0, 4.3) contains
+        # 18 steps, 0..17: step 17 starts at 4.25, inside the loop, so it must
+        # both light AND accept a press. Step 18 starts at 4.5 and must do
+        # neither. _step_count() rounding instead of ceiling made step 17 dark
+        # and unwritable -- and half of all loop lengths lose their last step
+        # that way, so this is the boundary the two gates have to share.
+        self.clip.loop_end = 4.3
+        self.button(C.BTN_RIGHT)                    # bank 1 -> steps 16-31
+        self.press(1)                               # step 17, the last in loop
+        self.assertEqual(len(self.clip.notes), 1)
+        self.assertAlmostEqual(self.clip.notes[0].start_time, 17 * C.STEP)
+        self.assertEqual(self.leds()[1], C.COLOR_STEP_ON)   # and it lights
+        self.seq.toggle_step(C.DEFAULT_LANE, 18)    # starts at 4.5, outside
         self.assertEqual(len(self.clip.notes), 1)   # refused, nothing written
-        self.assertEqual(lit, [0])
+
+    def test_a_note_past_the_loop_end_is_not_lit_in_overview(self):
+        # The same gate exists on both refresh paths and only the focus one was
+        # covered, so the lit-pad-that-ignores-you defect was fully
+        # reintroducible in overview with the suite green.
+        self.clip.loop_end = 1.5                    # six steps: 0..5
+        self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 6 * C.STEP, C.STEP, 100))
+        self.button(C.BTN_VIEW)                     # overview
+        self.button(C.BTN_RIGHT)                    # page 1 -> steps 4-7
+        self.seq.sent = []
+        self.seq.refresh_state()
+        self.assertEqual(self.seq._page, 1)
+        self.assertEqual(self.leds()[2], C.COLOR_STEP_OFF)  # step 6, past the loop
+
+    def test_a_note_on_the_last_step_of_a_whole_loop_lights(self):
+        # The ordinary case the off-by-one would break: one bar, note on the
+        # final 16th. Gating the render on `total - 1` renders it dark while
+        # toggle_step still erases it.
+        self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 15 * C.STEP, C.STEP, 100))
+        self.seq.sent = []
+        self.seq.refresh_state()
+        self.assertEqual(self.leds()[15], C.COLOR_STEP_ON)
 
     def test_disconnect_extinguishes_the_grid(self):
         self.press(0)
@@ -634,12 +669,17 @@ class Playhead(SeqTest):
         # The overview half of _scroll_to had no test at all: the only overview
         # playhead test played step 1 on page 0, so the branch never ran.
         self.clip.loop_end = self.clip.loop_start + 64 * C.STEP
+        self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 6 * C.STEP, C.STEP, 100))
         self.button(C.BTN_VIEW)                 # overview
         self.seq.sent = []
         self.clip.play(6 * C.STEP)
         self.assertEqual(self.seq._page, 1)
-        self.assertEqual([self.leds()[i] for i in (2, 6, 10, 14)],
-                         [C.COLOR_PLAYHEAD] * 4)
+        # The note matters: with an empty clip _paint() alone reproduces this
+        # result, so the test could not tell a moved window from a re-read one.
+        # COLOR_PLAYHEAD_ON is only reachable if the new page was read.
+        self.assertEqual(self.leds()[2], C.COLOR_PLAYHEAD_ON)
+        self.assertEqual([self.leds()[i] for i in (6, 10, 14)],
+                         [C.COLOR_PLAYHEAD] * 3)
 
     def test_paging_by_hand_stops_the_chase(self):
         self.clip.loop_end = self.clip.loop_start + 64 * C.STEP
@@ -770,6 +810,19 @@ class Navigation(SeqTest):
         self.seq.receive_midi(cc(C.KNOB_CHANNEL, C.CC_LENGTH, 63))
         self.assertAlmostEqual(self.clip.loop_end, 8.0 - C.STEP)
 
+    def test_length_knob_repaints_the_grid(self):
+        # The fake does not fire loop listeners on a programmatic write, and a
+        # real Live may not either -- so _set_length's own render is what covers
+        # the knob path, separately from the mouse-drag listener.
+        self.clip.loop_end = 4.0                # 16 steps (Navigation gives 32)
+        self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 12 * C.STEP, C.STEP, 100))
+        self.clip._fire('notes')
+        self.assertEqual(self.leds()[12], C.COLOR_STEP_ON)
+        self.seq.sent = []
+        for _ in range(8):
+            self.seq.receive_midi(cc(C.KNOB_CHANNEL, C.CC_LENGTH, 63))  # -> 8 steps
+        self.assertEqual(self.leds()[12], C.COLOR_STEP_OFF)
+
     def test_length_knob_will_not_shrink_below_one_step(self):
         for _ in range(64):
             self.seq.receive_midi(cc(C.KNOB_CHANNEL, C.CC_LENGTH, 63))
@@ -843,19 +896,23 @@ class Views(SeqTest):
         self.assertEqual(self.seq._lane_base, base - 16)
         self.button(C.BTN_MOD, False)
 
-    def test_the_lane_picker_bank_stays_on_its_series(self):
-        # Clamping used to knock the base off the 16-pitch grid it started on
-        # -- 36, 20, 4, then 0 -- and once it reached 0 the series was 0+16k,
-        # so the default drum-rack bank at 36 could not be selected again for
-        # the rest of the session. Refusing the move keeps the series intact.
+    def test_the_lane_picker_reaches_every_pitch_and_keeps_its_series(self):
+        # Two properties at once, because the two obvious implementations each
+        # give up one of them. The end stops must reach pitch 0 and 112, since
+        # MOD + pad is the only lane control this hardware can offer; and
+        # stepping back off a stop must return to the original 16-pitch series
+        # rather than stranding the picker on 0+16k with 36 unreachable.
         self.button(C.BTN_MOD, True)
-        for _ in range(6):
+        for _ in range(8):
             self.button(C.BTN_LEFT)             # walk into the bottom stop
-        self.assertEqual(self.seq._lane_base % 16, C.LANE_SELECT_BASE % 16)
-        self.button(C.BTN_RIGHT)
-        self.button(C.BTN_RIGHT)
+        self.assertEqual(self.seq._lane_base, 0)            # pitches 0-15
+        for _ in range(3):
+            self.button(C.BTN_RIGHT)
+        self.assertEqual(self.seq._lane_base, C.LANE_SELECT_BASE)   # back on series
+        for _ in range(5):
+            self.button(C.BTN_RIGHT)            # walk into the top stop
+        self.assertEqual(self.seq._lane_base, 112)          # pitches 112-127
         self.button(C.BTN_MOD, False)
-        self.assertEqual(self.seq._lane_base, C.LANE_SELECT_BASE)
 
     def test_mod_arrows_do_not_page_steps(self):
         self.seq._bank = 0
@@ -904,6 +961,7 @@ class Lifecycle(SeqTest):
         self.clip.dead = True
         self.seq._on_playhead()             # guarded listener
         self.seq._on_notes_changed()        # guarded listener
+        self.seq.refresh_state()            # the entry point the guard is for
         self.press(0)                       # receive_midi -> toggle_step
         self.song.view.select(None)         # rebind away from the corpse
         self.assertIsNone(self.seq._clip)
@@ -916,12 +974,37 @@ class Lifecycle(SeqTest):
         # showing a page the loop no longer has, and every pad on it is
         # refused without writing -- so nothing repaints it either.
         self.clip.loop_end = self.clip.loop_start + 32 * C.STEP
+        self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 20 * C.STEP, C.STEP, 100))
+        self.clip._fire('notes')
         self.button(C.BTN_RIGHT)                        # look at steps 17-32
         self.assertEqual(self.seq._bank, 1)
+        self.assertEqual(self.leds()[4], C.COLOR_STEP_ON)   # step 20 is lit
+        self.seq.sent = []
         self.clip.set_loop_end(self.clip.loop_start + 16 * C.STEP)
         self.assertEqual(self.seq._bank, 0)
+        # Asserting _bank alone was the exact flaw this suite calls out in the
+        # old playhead test: _clamp_pages moves it before anything is drawn, so
+        # dropping the _render() from _on_loop_changed stayed green while the
+        # device kept showing a page the loop no longer has.
+        self.assertEqual(self.leds()[4], C.COLOR_STEP_OFF)
+
+    def test_dragging_the_front_of_the_loop_redraws(self):
+        # loop_start moves both the step count and the absolute time every index
+        # maps to, and it fires only the loop_start listener -- so dropping that
+        # half of LOOP_PROPERTIES has to fail something.
+        self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 2 * C.STEP, C.STEP, 100))
+        self.clip._fire('notes')
+        self.assertEqual(self.leds()[2], C.COLOR_STEP_ON)
+        self.seq.sent = []
+        self.clip.set_loop_start(2 * C.STEP)            # loop is now [0.5, 4.0)
+        self.assertEqual(self.leds()[0], C.COLOR_STEP_ON)   # the note is step 0 now
 
     def test_the_loop_listeners_are_released_with_the_clip(self):
+        # assertTrue first: assertFalse alone is trivially satisfied by a
+        # listener that was never attached, which is how half of
+        # LOOP_PROPERTIES could be dropped with this test still green.
+        self.assertTrue(self.clip.loop_end_has_listener(self.seq._on_loop_changed))
+        self.assertTrue(self.clip.loop_start_has_listener(self.seq._on_loop_changed))
         self.song.view.select(FakeClip())
         self.assertFalse(self.clip.loop_end_has_listener(self.seq._on_loop_changed))
         self.assertFalse(self.clip.loop_start_has_listener(self.seq._on_loop_changed))
@@ -983,6 +1066,26 @@ class MidiPlumbing(SeqTest):
         self.assertTrue(any('exception in notes listener' in line
                             for line in self.c_instance.log))
 
+    def test_the_exception_log_is_latched_but_still_hears_a_new_fault(self):
+        # The latch is what stops a per-audio-buffer fault writing ~90
+        # tracebacks a second and burying the first. Keyed too coarsely it
+        # would silently swallow a second, different fault -- and since the
+        # suite's whole backstop is tearDown reading 'exception in' lines,
+        # that would blind the suite as well as Log.txt.
+        self.expect_logged_exception = True
+        self.clip.get_notes_extended = lambda *a: 1 / 0
+        self.clip._fire('notes')
+        self.clip._fire('notes')
+        lines = [l for l in self.c_instance.log if 'exception in notes listener' in l]
+        self.assertEqual(len(lines), 1)         # the repeat is latched
+
+        def different(*a):
+            raise RuntimeError('a different fault entirely')
+        self.clip.get_notes_extended = different
+        self.clip._fire('notes')
+        lines = [l for l in self.c_instance.log if 'exception in notes listener' in l]
+        self.assertEqual(len(lines), 2)         # but a new one is still heard
+
     def test_transport_button_toggles_playback(self):
         self.button(C.BTN_PLAY)
         self.assertTrue(self.song.is_playing)
@@ -1017,11 +1120,25 @@ class Configuration(unittest.TestCase):
         pad = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(pad)
 
+        # Sweep every note constant the launcher defines, not a hand-picked
+        # six: enabling any of the ~42 currently at -1 is the realistic way a
+        # collision gets introduced, and naming six left that path uncovered.
+        not_notes = {'BUTTONCHANNEL', 'SLIDERCHANNEL', 'MESSAGETYPE', 'PADCHANNEL',
+                     'TSB_X', 'TSB_Y', 'TRACK_OFFSET', 'SCENE_OFFSET',
+                     'TEMPO_TOP', 'TEMPO_BOTTOM'}
         launcher = set()
-        for row in pad.CLIPNOTEMAP:
-            launcher.update(row)
-        launcher.update((pad.PLAY, pad.STOP, pad.REC,
-                         pad.TRACKLEFT, pad.TRACKRIGHT, pad.MODIFIER))
+        for name in dir(pad):
+            if not name.isupper() or name in not_notes or name.startswith('CLIP_'):
+                continue
+            value = getattr(pad, name)
+            if isinstance(value, int):
+                launcher.add(value)
+            elif isinstance(value, tuple):
+                for item in value:
+                    if isinstance(item, int):
+                        launcher.add(item)
+                    elif isinstance(item, tuple):
+                        launcher.update(i for i in item if isinstance(i, int))
         launcher.discard(-1)
 
         mine = set(C.PAD_NOTES) | set(C.PAD_NOTES_B)
