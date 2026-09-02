@@ -599,12 +599,35 @@ class Rendering(SeqTest):
         # reintroducible in overview with the suite green.
         self.clip.loop_end = 1.5                    # six steps: 0..5
         self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 6 * C.STEP, C.STEP, 100))
+        self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 5 * C.STEP, C.STEP, 100))
         self.button(C.BTN_VIEW)                     # overview
         self.button(C.BTN_RIGHT)                    # page 1 -> steps 4-7
+        self.button(C.BTN_RIGHT)                    # and again: page 1 is the last
         self.seq.sent = []
         self.seq.refresh_state()
-        self.assertEqual(self.seq._page, 1)
+        self.assertEqual(self.seq._page, 1)                 # _clamp_pages held it
+        # Both directions. Gating on `total` renders step 5 and hides step 6;
+        # gating on `total - 1` hides both, which is the off-by-one the focus
+        # companion test is named for and could not see over here.
+        self.assertEqual(self.leds()[1], C.LANE_COLORS[0])  # step 5, last in loop
         self.assertEqual(self.leds()[2], C.COLOR_STEP_OFF)  # step 6, past the loop
+
+    def test_the_in_loop_gate_holds_when_empty_steps_are_marked(self):
+        # COLOR_STEP_EMPTY ships as 0, the same byte as COLOR_STEP_OFF, so the
+        # in-loop gate on the *empty* pass is unobservable under the default
+        # palette -- deleting it is green. MIDI_Map.py explicitly invites
+        # turning these markers on, at which point the gate starts mattering.
+        seqmod = SEQ_MODULE
+        original = seqmod.COLOR_STEP_EMPTY
+        try:
+            seqmod.COLOR_STEP_EMPTY = 40
+            self.clip.loop_end = 1.0                # four steps: 0..3
+            self.seq.sent = []
+            self.seq.refresh_state()
+            self.assertEqual(self.leds()[0], 40)                # in loop, marked
+            self.assertEqual(self.leds()[4], C.COLOR_STEP_OFF)  # out of loop, dark
+        finally:
+            seqmod.COLOR_STEP_EMPTY = original
 
     def test_a_note_on_the_last_step_of_a_whole_loop_lights(self):
         # The ordinary case the off-by-one would break: one bar, note on the
@@ -896,6 +919,22 @@ class Views(SeqTest):
         self.assertEqual(self.seq._lane_base, base - 16)
         self.button(C.BTN_MOD, False)
 
+    def test_the_lane_base_starts_inside_the_range_the_picker_derives(self):
+        # _lane_base is a DERIVED value -- every later write is
+        # _clamp(LANE_SELECT_BASE + 16 * bank, 0, 112) -- so the constructor has
+        # to apply the same clamp. Writing the raw constant left any
+        # LANE_SELECT_BASE above 112 starting out of range, and MOD + pad then
+        # selected pitches past 127, which toggle_step refuses in silence.
+        seqmod = SEQ_MODULE
+        original = seqmod.LANE_SELECT_BASE
+        try:
+            seqmod.LANE_SELECT_BASE = 120
+            fresh = MVave_SMC_STEPSEQ(FakeCInstance())
+            self.assertLessEqual(fresh._lane_base, 112)
+            self.assertLessEqual(lane_for_pad(0, fresh._lane_base), 127)
+        finally:
+            seqmod.LANE_SELECT_BASE = original
+
     def test_the_lane_picker_reaches_every_pitch_and_keeps_its_series(self):
         # Two properties at once, because the two obvious implementations each
         # give up one of them. The end stops must reach pitch 0 and 112, since
@@ -935,6 +974,56 @@ class Views(SeqTest):
         self.button(C.BTN_MOD, down=False)
         self.press(0)
         self.assertEqual(self.clip.notes[0].pitch, lane_for_pad(12))
+
+
+class OffsetLoop(SeqTest):
+    """Every core guarantee again, on a clip whose loop does not start at zero.
+
+    Every other clip in this file is built `loop_start=0.0`, which made six of
+    the seven places the script reads `loop_start` invisible: dropping it from
+    `toggle_step`, `_step_count`, `_on_playhead`, `_set_length` or either read
+    window left the suite green while the pads wrote and drew at the wrong beat.
+    Dragging the front of the brace in is an entirely ordinary thing to do.
+    """
+
+    def setUp(self):
+        SeqTest.setUp(self)
+        self.clip = FakeClip(loop_start=1.0, loop_end=5.0)      # 16 steps
+        self.song.view.select(self.clip)
+        self.seq.sent = []
+
+    def test_a_pad_writes_relative_to_the_loop_start(self):
+        self.press(3)
+        self.assertAlmostEqual(self.clip.notes[0].start_time, 1.0 + 3 * C.STEP)
+
+    def test_the_step_count_is_relative_to_the_loop_start(self):
+        self.assertEqual(self.seq._step_count(), 16)
+
+    def test_a_note_lights_the_pad_its_own_offset_names(self):
+        # Step 14 sits at beat 4.5 -- inside [1.0, 5.0) but OUTSIDE the [0, 4.0)
+        # window a loop_start-blind read would use. A note near the start of the
+        # loop falls in both windows and so cannot see that mutation at all.
+        self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 1.0 + 14 * C.STEP, C.STEP, 100))
+        self.seq.sent = []
+        self.seq.refresh_state()
+        self.assertEqual(self.leds()[14], C.COLOR_STEP_ON)
+
+    def test_the_overview_read_window_is_relative_to_the_loop_start(self):
+        # The overview read window has its own copy of the offset, and the
+        # focus tests above cannot see it.
+        self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 1.0 + 2 * C.STEP, C.STEP, 100))
+        self.button(C.BTN_VIEW)                 # overview
+        self.seq.sent = []
+        self.seq.refresh_state()
+        self.assertEqual(self.leds()[2], C.LANE_COLORS[0])
+
+    def test_the_playhead_is_relative_to_the_loop_start(self):
+        self.clip.play(1.0 + 2 * C.STEP)
+        self.assertEqual(self.leds()[2], C.COLOR_PLAYHEAD)
+
+    def test_the_length_knob_measures_from_the_loop_start(self):
+        self.seq.receive_midi(cc(C.KNOB_CHANNEL, C.CC_LENGTH, 63))      # 16 -> 15
+        self.assertAlmostEqual(self.clip.loop_end, 1.0 + 15 * C.STEP)
 
 
 # ------------------------------------------------------------------ lifecycle
@@ -1125,7 +1214,15 @@ class Configuration(unittest.TestCase):
         # collision gets introduced, and naming six left that path uncovered.
         not_notes = {'BUTTONCHANNEL', 'SLIDERCHANNEL', 'MESSAGETYPE', 'PADCHANNEL',
                      'TSB_X', 'TSB_Y', 'TRACK_OFFSET', 'SCENE_OFFSET',
-                     'TEMPO_TOP', 'TEMPO_BOTTOM'}
+                     'TEMPO_TOP', 'TEMPO_BOTTOM',
+                     # CC assignments, on SLIDERCHANNEL -- they share a number
+                     # space with notes but never a message type, so a CC of 101
+                     # is not a collision and must not fail this test.
+                     'TEMPOCONTROL', 'MASTERVOLUME', 'CUELEVEL', 'CROSSFADER',
+                     'TRACKVOL', 'TRACKPAN', 'TRACKSENDA', 'TRACKSENDB',
+                     'TRACKSENDC', 'PARAMCONTROL',
+                     # Drum-rack pitches Live translates TO; never transmitted.
+                     'DRUM_PADS'}
         launcher = set()
         for name in dir(pad):
             if not name.isupper() or name in not_notes or name.startswith('CLIP_'):
