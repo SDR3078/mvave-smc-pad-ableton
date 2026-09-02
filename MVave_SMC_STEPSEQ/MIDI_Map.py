@@ -34,11 +34,13 @@ PAD_CHANNEL = 0
 # thing distinguishing them. 101-116 is far enough from 1-21 that no editor slip
 # can make them overlap.
 #
-# Getting here required a port-3 bank. In the .spc that is the flag byte -- 0x04
-# routes a bank to port 3, 0x00 routes it to ports 1 and 2 (HARDWARE.md 5.6).
-# Only port-3 banks light their pads, and only they are fixed-velocity; the
-# ports-1/2 banks are velocity-sensitive but cannot be lit at all. That trade is
-# a property of the hardware, not a configuration choice.
+# Getting here required a port-3 bank. The port follows the ASSIGNMENT TYPE, not
+# a flag you set: MCP-typed assignments come out of port 3, are fixed-velocity
+# and light; plain-MIDI assignments come out of ports 1/2, are velocity-sensitive
+# and cannot be lit. The .spc's 0x04 byte is most likely just the MCP marker
+# rather than a port selector -- that earlier model is superseded and the
+# confirming experiment is still unrun (HARDWARE.md 5.6). The trade follows from
+# what the two protocols are, so no configuration escapes it.
 PAD_NOTES = tuple(range(101, 117))
 
 PAD_NOTES_B = ()
@@ -93,7 +95,8 @@ BTN_RIGHT = 121             # next step page;     +MOD lane bank up
 #      cannot reach the same script as the pads. See the class-level
 #      _active_instances hook in MVave_SMC_STEPSEQ.py for the way out.
 #   2. Encoder assignments ARE per preset -- the two files in reference/ differ
-#      at exactly encoder records 8 and 9 (HARDWARE.md 4.1) -- so this preset
+#      at exactly encoder records 9 and 10, bank 2's first two (HARDWARE.md 5.2)
+#      -- so this preset
 #      could carry its own CCs without costing the launcher anything. That is
 #      not the obstacle; point 1 is. The CCs would still arrive on ports 1/2,
 #      where this script cannot hear them.
@@ -148,9 +151,10 @@ LED_NOTES = PAD_NOTES        # MEASURED 2026-08-31: the LEDs follow the pad note
                              # and discriminated neither. Re-measured on a preset
                              # with a different note range, which separates them.
                              #
-                             # Only port-3 banks light at all (flag 0x04). The
-                             # ports-1/2 banks are velocity-sensitive and cannot
-                             # be lit on any port, note range or channel tried.
+                             # Only MCP-typed banks light at all, and those are
+                             # the port-3 ones. The ports-1/2 banks are
+                             # velocity-sensitive and could not be lit on any
+                             # port, note range or channel tried.
 
 # The palette, sampled 2026-08-02 (HARDWARE.md 3.2). Usable, well-separated
 # anchors -- and this really is the whole usable range, because everything from
@@ -233,8 +237,9 @@ PAINT_VELOCITY = 100
 # Costs nothing when the pads are not velocity-sensitive: a fixed-127 pad simply
 # paints 127, and PAINT_VELOCITY takes over if the preset is ever configured to
 # send a constant. Worth keeping on, because if a velocity-sensitive preset can
-# be built it removes the need for a velocity encoder entirely -- and both knob
-# banks are now spent on device macros, so there is nowhere to put one.
+# be built it removes the need for a velocity encoder entirely -- which matters
+# because the encoder CCs cannot reach this script anyway, the port being the
+# obstacle rather than the bank budget (see point 1 in the encoder block above).
 #
 # NOT yet demonstrated on this device. The velocity-sensitive stream seen on
 # 2026-08-31 came from an unidentified device state and has never been isolated.

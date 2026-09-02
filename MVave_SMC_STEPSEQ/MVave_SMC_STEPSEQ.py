@@ -46,8 +46,13 @@ LOOP_PROPERTIES = ('loop_start', 'loop_end')
 # How far the MOD + arrow lane picker can travel, as a bank index either side of
 # LANE_SELECT_BASE. Derived so the clamped base reaches both 0 and 112 -- i.e.
 # every pitch 0-127 is selectable -- whatever LANE_SELECT_BASE is set to.
-LANE_BANK_MIN = -((LANE_SELECT_BASE // 16) + 1)
-LANE_BANK_MAX = ((112 - LANE_SELECT_BASE) // 16) + 1
+# The extra index at each end exists to overshoot onto the 0 and 112 stops. When
+# the series already lands on a stop -- any LANE_SELECT_BASE that is a multiple
+# of 16 -- overshooting would derive the same base twice and the first arrow
+# press off that stop would do nothing, so it is only added when needed.
+LANE_BANK_MIN = -(LANE_SELECT_BASE // 16) - (1 if LANE_SELECT_BASE % 16 else 0)
+LANE_BANK_MAX = ((112 - LANE_SELECT_BASE) // 16
+                 + (1 if (112 - LANE_SELECT_BASE) % 16 else 0))
 
 
 def _clamp(value, low, high):
@@ -131,7 +136,11 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         self._page = 0
         self._mod = False
         self._follow = FOLLOW_PLAYHEAD
-        self._lane_base = LANE_SELECT_BASE
+        # Clamped exactly as _lane_base_by derives it at bank 0, so the two
+        # cannot start out of step. Writing the raw constant here put every
+        # LANE_SELECT_BASE above 112 outside the range the derivation below
+        # guarantees, and MOD + pad then selected pitches past 127.
+        self._lane_base = _clamp(LANE_SELECT_BASE, 0, 112)
         self._lane_bank = 0                     # MOD + arrow moves this, not the base
         self._paint_velocity = PAINT_VELOCITY
         self._btn_led = {}                      # what each button was last told
@@ -627,10 +636,26 @@ class MVave_SMC_STEPSEQ(ControlSurface):
                 # Resume: paging away is a peek at one cycle, not a mode. Without
                 # this the view stays stranded until you page back or stop.
                 self._follow = FOLLOW_PLAYHEAD
-            if self._follow and self._scroll_to(step):
+            if (self._follow and self._worth_following(step)
+                    and self._scroll_to(step)):
                 self._render()  # the window moved, so the whole grid is stale
                 return
         self._paint()
+
+    def _worth_following(self, step):
+        """Is this step worth banking the whole view onto?
+
+        A loop brace dragged off the grid leaves a final step with only a sliver
+        of in-loop time. Chasing it banks the view there and back within a few
+        tens of milliseconds, twice per cycle -- the burst of LED writes this
+        device's input buffer does not survive (HARDWARE.md 3.5). The step is
+        still lit, still writable and still reachable with the arrows; only the
+        automatic scroll declines to jump for it.
+        """
+        clip = self._clip
+        if clip is None:
+            return False
+        return (clip.loop_end - (clip.loop_start + step * STEP)) >= STEP / 2.0
 
     def _scroll_to(self, step):
         """Put `step` on the visible window. True if the window actually moved."""
