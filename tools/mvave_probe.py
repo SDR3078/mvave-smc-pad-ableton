@@ -30,6 +30,22 @@ import mido
 DEFAULT_CHANNEL = 1
 
 
+def _reject_bare_index(wanted, kind, names):
+    """A bare number is never a port selector here.
+
+    RtMidi appends a 0-based index to every port name, so "1" is a substring
+    that uniquely matches "MIDIIN2 (SMC-PAD) 1" -- the pair this documentation
+    calls port 2. HARDWARE.md 1.3 tells the reader to disambiguate by index,
+    which makes that an easy and completely silent way to measure the wrong
+    port. Refuse it and show the real names instead.
+    """
+    if wanted is not None and wanted.strip().isdigit():
+        sys.exit("%r is ambiguous: port names end in a 0-based index, so %r also\n"
+                 "matches the pair one higher than you probably mean. Pass part of\n"
+                 "the name instead. Available %s ports:\n  %s"
+                 % (wanted, wanted, kind, "\n  ".join(names)))
+
+
 def pick_port(names, wanted, kind):
     """Resolve a substring to exactly one port name, or explain what went wrong."""
     if not names:
@@ -37,6 +53,7 @@ def pick_port(names, wanted, kind):
     if wanted is None:
         sys.exit("Pass --port with part of a port name. Available %s ports:\n  %s"
                  % (kind, "\n  ".join(names)))
+    _reject_bare_index(wanted, kind, names)
     hits = [n for n in names if wanted.lower() in n.lower()]
     if not hits:
         sys.exit("No %s port matching %r. Available:\n  %s" % (kind, wanted, "\n  ".join(names)))
@@ -58,6 +75,7 @@ def pick_ports(names, wanted, kind):
     if wanted is None:
         sys.exit("Pass --port with part of a port name. Available %s ports:\n  %s"
                  % (kind, "\n  ".join(names)))
+    _reject_bare_index(wanted, kind, names)
     hits = [n for n in names if wanted.lower() in n.lower()]
     if not hits:
         sys.exit("No %s port matching %r. Available:\n  %s" % (kind, wanted, "\n  ".join(names)))
@@ -181,10 +199,14 @@ def cmd_light(args):
           % (args.lo, args.hi, args.velocity, args.channel, name))
     print("WATCH THE PADS. Holding for %.0fs, then clearing.\n" % args.hold)
     with mido.open_output(name) as port:
-        _paced(port, [mido.Message("note_on", channel=ch, note=n, velocity=args.velocity)
-                      for n in range(args.lo, args.hi + 1)])
-        time.sleep(args.hold)
-        _send_all_off(port, ch, args.lo, args.hi)
+        try:
+            _paced(port, [mido.Message("note_on", channel=ch, note=n, velocity=args.velocity)
+                          for n in range(args.lo, args.hi + 1)])
+            time.sleep(args.hold)
+        finally:
+            # Ctrl+C during the hold used to leave the whole grid lit, needing a
+            # separate --clear run. --sweep already handled this.
+            _send_all_off(port, ch, args.lo, args.hi)
     print("Cleared. Did anything light up?")
 
 
@@ -329,20 +351,26 @@ def cmd_knobs(args):
                     for msg in port.iter_pending():
                         if msg.type != "control_change":
                             continue
-                        per_cc.setdefault(msg.control, []).append(msg.value)
+                        # Keyed on (channel, CC), not CC alone. A controller
+                        # whose KNOB BANK switches channel instead of CC numbers
+                        # would otherwise read as two identical banks, and two
+                        # encoders separable by channel would be called a clash.
+                        per_cc.setdefault((msg.channel, msg.control), []).append(msg.value)
                     if not per_cc:
-                        rows.append((bank, encoder, None, "-", 0, ""))
+                        rows.append((bank, encoder, None, None, "-", 0, ""))
                         print("      nothing received")
                         continue
-                    for cc in sorted(per_cc, key=lambda c: -len(per_cc[c])):
-                        values = per_cc[cc]
+                    for key in sorted(per_cc, key=lambda k: -len(per_cc[k])):
+                        channel, cc = key
+                        values = per_cc[key]
                         mode = _classify(values)
                         distinct = sorted(set(values))
                         shown = ", ".join(str(v) for v in distinct[:6])
                         if len(distinct) > 6:
                             shown += ", ... (%d distinct)" % len(distinct)
-                        rows.append((bank, encoder, cc, mode, len(values), shown))
-                        print("      CC %-3d  %-9s  %d msgs  [%s]" % (cc, mode, len(values), shown))
+                        rows.append((bank, encoder, channel, cc, mode, len(values), shown))
+                        print("      ch %-2d CC %-3d  %-9s  %d msgs  [%s]"
+                              % (channel + 1, cc, mode, len(values), shown))
                 print()
         except (KeyboardInterrupt, EOFError):
             print("\n(stopped)\n")
@@ -350,22 +378,24 @@ def cmd_knobs(args):
     if not rows:
         return
     print("=== encoder map ===")
-    print("  %-5s %-8s %-5s %-10s %6s  %s" % ("bank", "encoder", "CC", "mode", "msgs", "values"))
-    for bank, encoder, cc, mode, n, shown in rows:
-        print("  %-5d %-8d %-5s %-10s %6d  %s"
-              % (bank, encoder, "-" if cc is None else cc, mode, n, shown))
+    print("  %-5s %-8s %-3s %-5s %-10s %6s  %s"
+          % ("bank", "encoder", "ch", "CC", "mode", "msgs", "values"))
+    for bank, encoder, channel, cc, mode, n, shown in rows:
+        print("  %-5d %-8d %-3s %-5s %-10s %6d  %s"
+              % (bank, encoder, "-" if channel is None else channel + 1,
+                 "-" if cc is None else cc, mode, n, shown))
 
-    silent = [(b, e) for b, e, cc, _, _, _ in rows if cc is None]
+    silent = [(b, e) for b, e, _, cc, _, _, _ in rows if cc is None]
     if silent:
         print("\nSent nothing: " + ", ".join("bank %d enc %d" % be for be in silent))
     seen = {}
-    for bank, encoder, cc, _, _, _ in rows:
+    for bank, encoder, channel, cc, _, _, _ in rows:
         if cc is not None:
-            seen.setdefault((bank, cc), []).append(encoder)
+            seen.setdefault((bank, channel, cc), []).append(encoder)
     clashes = {k: v for k, v in seen.items() if len(v) > 1}
-    for (bank, cc), encoders in sorted(clashes.items()):
-        print("CLASH: bank %d CC %d came from encoders %s"
-              % (bank, cc, ", ".join(str(e) for e in encoders)))
+    for (bank, channel, cc), encoders in sorted(clashes.items()):
+        print("CLASH: bank %d ch %d CC %d came from encoders %s"
+              % (bank, channel + 1, cc, ", ".join(str(e) for e in encoders)))
 
 
 def cmd_clear(args):
@@ -424,13 +454,46 @@ def cmd_colours(args):
             start, current = vel, colour
 
 
+def bounded_int(low, high, what):
+    """An argparse type that rejects out-of-range values up front.
+
+    Without this a bad --channel or --note reaches mido only after the port is
+    open and the human is already answering prompts, and surfaces as a
+    traceback whose wording contradicts our own --help ("channel must be in
+    range 0..15" against "MIDI channel 1-16").
+    """
+    def parse(text):
+        try:
+            value = int(text)
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                "%s must be a whole number, got %r" % (what, text))
+        if not low <= value <= high:
+            raise argparse.ArgumentTypeError(
+                "%s must be %d-%d, got %d" % (what, low, high, value))
+        return value
+    return parse
+
+
 def velocity_list(text):
     if text == "all":
         return list(range(1, 128))
     if text == "coarse":
         # Enough to reveal a colour table without watching 127 steps.
         return [1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 20, 24, 32, 40, 48, 60, 64, 80, 96, 112, 127]
-    return [int(v) for v in text.split(",")]
+    try:
+        values = [int(v) for v in text.split(",")]
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "--velocities takes 'coarse', 'all', or a comma list of 0-127")
+    bad = [v for v in values if not 0 <= v <= 127]
+    if bad:
+        # Caught here rather than mid-run: --colours prompts the human for a
+        # colour name at every step, and a value mido rejects halfway through
+        # throws away every answer already typed.
+        raise argparse.ArgumentTypeError(
+            "velocities must be 0-127, got %s" % ", ".join(str(v) for v in bad))
+    return values
 
 
 def main():
@@ -438,16 +501,25 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", help="substring of the MIDI port name (see --list)")
     p.add_argument("--port2", help="second input port to watch simultaneously (--curves only)")
-    p.add_argument("--channel", type=int, default=DEFAULT_CHANNEL, help="MIDI channel 1-16")
-    p.add_argument("--lo", type=int, default=0, help="lowest note to touch")
-    p.add_argument("--hi", type=int, default=127, help="highest note to touch")
-    p.add_argument("--velocity", type=int, default=127, help="velocity for --light/--sweep")
+    p.add_argument("--channel", type=bounded_int(1, 16, "channel"),
+                   default=DEFAULT_CHANNEL, help="MIDI channel 1-16")
+    p.add_argument("--lo", type=bounded_int(0, 127, "--lo"), default=0,
+                   help="lowest note to touch")
+    p.add_argument("--hi", type=bounded_int(0, 127, "--hi"), default=127,
+                   help="highest note to touch")
+    p.add_argument("--velocity", type=bounded_int(0, 127, "--velocity"), default=127,
+                   help="velocity for --light/--sweep")
     p.add_argument("--hold", type=float, default=3.0, help="seconds to hold each step")
-    p.add_argument("--step", type=int, default=16, help="block size for --sweep")
-    p.add_argument("--seconds", type=int, default=60, help="how long --listen runs")
-    p.add_argument("--banks", type=int, default=2, help="knob banks to walk (--knobs)")
-    p.add_argument("--count", type=int, default=8, help="encoders per bank (--knobs)")
-    p.add_argument("--note", type=int, default=0, help="which note --colours walks")
+    p.add_argument("--step", type=bounded_int(1, 128, "--step"), default=16,
+                   help="block size for --sweep")
+    p.add_argument("--seconds", type=bounded_int(1, 86400, "--seconds"), default=60,
+                   help="how long --listen runs")
+    p.add_argument("--banks", type=bounded_int(1, 16, "--banks"), default=2,
+                   help="knob banks to walk (--knobs)")
+    p.add_argument("--count", type=bounded_int(1, 64, "--count"), default=8,
+                   help="encoders per bank (--knobs)")
+    p.add_argument("--note", type=bounded_int(0, 127, "--note"), default=0,
+                   help="which note --colours walks")
     p.add_argument("--velocities", type=velocity_list, default="coarse",
                    help="'coarse', 'all', or a comma list, for --colours")
 

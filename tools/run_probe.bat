@@ -1,9 +1,8 @@
 @echo off
 REM Runs mvave_probe.py on Windows in its own virtual environment.
 REM First run creates .\venv-midi and installs deps; later runs just start it.
-REM Deliberately a separate venv from the capture server's, so this cannot
-REM disturb a rig that already works. Teardown: delete venv-midi.
-REM See docs/TEARDOWN.md.
+REM Deliberately its own venv, so this cannot disturb any other virtualenv in
+REM the project. Teardown: delete venv-midi.
 REM
 REM Usage:  run_probe.bat --list
 REM         run_probe.bat --listen --port "MIDIIN3"
@@ -22,14 +21,23 @@ if not exist "%PY%" (
     if not exist "%PY%" goto :nopython
 )
 
-if not exist "%STAMP%" (
+REM The stamp is a COPY of the requirements file, not a marker, so bumping a
+REM pin reinstalls instead of silently keeping the old version forever.
+set "NEEDS_DEPS="
+if not exist "%STAMP%" set "NEEDS_DEPS=1"
+if exist "%STAMP%" (
+    fc /b "%STAMP%" "%~dp0requirements-midi.txt" >nul 2>&1
+    if errorlevel 1 set "NEEDS_DEPS=1"
+)
+
+if defined NEEDS_DEPS (
     echo Installing dependencies ...
     "%PY%" -m pip install --upgrade pip >nul 2>&1
     "%PY%" -m pip install -r "%~dp0requirements-midi.txt"
     if errorlevel 1 goto :pipfail
     "%PY%" -c "import mido, rtmidi"
     if errorlevel 1 goto :pipfail
-    > "%STAMP%" echo ok
+    copy /y "%~dp0requirements-midi.txt" "%STAMP%" >nul
     echo.
 )
 
