@@ -32,7 +32,13 @@ class SpecialZoomingComponent(SessionZoomingComponent):
             track_offset = self._session.track_offset()
             scene_offset = self._session.scene_offset()
             new_scene_offset = scene_offset + height - (scene_offset % height)
-            self._session.set_offsets(track_offset, new_scene_offset)
+            # Clamped. The up/left twins are guarded with "> 0"; these two had
+            # no ceiling at all, so with 10 scenes and a 4-high box the third
+            # press put the offset at 12 and left a blank box to walk back by
+            # hand. The knob script clamps before the same call, for the same
+            # reason: what set_offsets does past the end is not verifiable here.
+            ceiling = max(0, len(self.song().scenes) - height)
+            self._session.set_offsets(track_offset, min(new_scene_offset, ceiling))
 
     def _scroll_left(self):
         #if self._is_zoomed_out:
@@ -53,4 +59,13 @@ class SpecialZoomingComponent(SessionZoomingComponent):
         track_offset = self._session.track_offset()
         scene_offset = self._session.scene_offset()
         new_track_offset = track_offset + width - (track_offset % width)
-        self._session.set_offsets(new_track_offset, scene_offset)
+        # Clamped, as in _scroll_down. Track count from visible_tracks with a
+        # fallback, matching MVave_SMC_KNOBS._bank -- whether SessionComponent
+        # takes its list from its mixer (and so also sees return tracks) is the
+        # open question DEVELOPMENT.md records; erring low only limits banking.
+        try:
+            track_count = len(self.song().visible_tracks)
+        except AttributeError:
+            track_count = len(self.song().tracks)
+        ceiling = max(0, track_count - width)
+        self._session.set_offsets(min(new_track_offset, ceiling), scene_offset)

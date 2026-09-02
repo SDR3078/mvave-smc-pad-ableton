@@ -163,7 +163,12 @@ class MVave_SMC_PAD(ControlSurface):
             self._session.set_track_bank_buttons(None, None)
             self._session.set_scene_bank_buttons(forward, back)
         else:
-            self._session.set_scene_bank_buttons(None, None)
+            # Restored to what the constructor set, not to (None, None): with
+            # SESSIONDOWN/UP assigned, hardcoding None here unbound them
+            # permanently on the first modifier press -- they worked until you
+            # first held the modifier, then were dead for the session.
+            self._session.set_scene_bank_buttons(self._note_map[SESSIONDOWN],
+                                                 self._note_map[SESSIONUP])
             self._session.set_track_bank_buttons(forward, back)
 
     def _setup_mixer_control(self):
