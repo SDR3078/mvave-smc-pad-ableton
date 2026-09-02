@@ -194,7 +194,7 @@ MVave_SMC_KNOBS: first macro CC -- 1 value 65 -> macro 1
 |---|---|---|
 | `loaded.` | The knob script was found and constructed. | At startup. |
 | `device -> …` | The macro knobs have a device to point at. | **Only once the selected track changes** — click a track before concluding the macros are broken. |
-| `first nav CC -- 38 value 65` | MIDI is actually reaching the script. | The first time you turn encoder 1 or 2 on bank 2. Logged once only; a knob produces hundreds of messages. |
+| `first nav CC -- 17 value 65` | MIDI is actually reaching the script. | The first time you turn encoder 1 or 2 on bank 2. Logged once only; a knob produces hundreds of messages. |
 | `first macro CC -- …` | A macro knob is reaching the script and resolving to a macro number. | The first time you turn any macro encoder. Logged once only. |
 
 The **pad script prints nothing on a clean load** — its only log lines are

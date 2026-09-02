@@ -334,7 +334,7 @@ pad's note is swallowed before the session component sees it.
 | File | What it is |
 |---|---|
 | `__init__.py` | `create_instance()`. |
-| `MVave_SMC_KNOBS.py` | Everything: constants, the `ControlSurface` subclass, the relative-encoder decode, the cross-script session lookup. ~325 lines, no subcomponents. |
+| `MVave_SMC_KNOBS.py` | Everything: constants, the `ControlSurface` subclass, the relative-encoder decode, the cross-script session lookup. ~370 lines, no subcomponents. |
 
 Its constants sit at the top of the file rather than in a separate map, because
 there are only a handful:
@@ -507,7 +507,7 @@ controls that the hardware actually feeds.
 
 The point of doing this in a script rather than with Ctrl+M is that Ctrl+M binds a
 knob to *one fixed parameter of one fixed device forever*. The blue hand follows
-the selection: click a different track, and the same six encoders now drive that
+the selection: click a different track, and the same encoders now drive that
 track's device. That is the entire justification for the knob script existing.
 
 ### It only gets a device when the selected track changes

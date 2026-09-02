@@ -13,7 +13,7 @@ this file is what got built and section 4 says why.
 > **Status: running in Live on real hardware** (2026-08-31). Every value in
 > `MIDI_Map.py` is measured rather than assumed — section 5 has the table and
 > [HARDWARE.md](HARDWARE.md) has the method. The logic is also exercised by
-> `tools/stepseq_selftest.py` (87 checks, no controller and no DAW required),
+> `tools/stepseq_selftest.py` (92 checks, no controller and no DAW required),
 > which is what makes a change safe to attempt without a Live restart.
 >
 > Two things the first real session changed: the visible window now follows the
@@ -77,7 +77,10 @@ two unrelated things under one name in a codebase about this exact device.
 
 **The lane picker banks.** MOD + pad reaches sixteen pitches starting at
 `LANE_SELECT_BASE`, which is one bank of a drum rack. MOD + an arrow moves that
-base by 16, so the whole rack is reachable.
+base by 16, so all 128 pitches are reachable. The two end stops land on 0 and
+112 rather than on the `LANE_SELECT_BASE + 16k` series, and stepping back off a
+stop returns to the series — the picker tracks a bank index, not the base, so a
+trip to either end does not strand it.
 
 **The encoder CCs are not wired.** Both knob banks are spent on device macros for
 the other script ([HARDWARE.md 4.1](HARDWARE.md)) and there is no third bank, so
@@ -144,12 +147,12 @@ repo. The architecture survived all four; the hardware constants did not.
 **The knobs are probably unreachable, and it is not a software problem.** The
 pads appear only on port 3 and the encoders only on ports 1 and 2, never both
 ([HARDWARE.md 1.1](HARDWARE.md)). A Remote Script gets exactly one input port.
-Worse, encoder assignments are not per pad-preset — the `.spc` holds exactly 16
-encoder records, two banks of eight ([HARDWARE.md 5.2](HARDWARE.md)) — so
-putting the sequencer's CC 20–23 on the encoders spends one of the two KNOB BANK
-banks globally, and both are already accounted for: bank 1 drives macros 1–8 and
-bank 2 macros 9–16, with the launcher preset spending bank 2's bottom pair on
-session navigation instead of the last two macros.
+Encoder assignments *are* per preset — the two files in `reference/` differ at
+exactly encoder records 8 and 9 ([HARDWARE.md 4.1](HARDWARE.md)) — so this preset
+could carry its own CC 20–23 without costing the launcher anything. What it
+cannot do is get them to this script: the encoders never appear on port 3, and a
+Remote Script gets one input port. The way in is a forward from the encoder
+script, not a different assignment.
 
 The sequencer works without any knob. Only paint velocity and pattern length
 become unreachable, and both have mouse equivalents in Live. If the knobs turn
@@ -204,7 +207,7 @@ method are in [HARDWARE.md](HARDWARE.md); this is what the sequencer depends on.
 
 | Question | Answer |
 |---|---|
-| Which port does the sequencer preset use? | **Port 3.** Set by the `.spc` flag byte — `0x04` routes a bank to port 3, `0x00` to ports 1 and 2. This settles the flag-byte hypothesis the repo carried from August. |
+| Which port does the sequencer preset use? | **Port 3.** MCP-typed banks come out of port 3 — see [HARDWARE.md 5.6](HARDWARE.md), where the flag-byte-as-port-selector explanation is superseded and the confirming experiment is still unrun. |
 | What do the pads send? | **Notes 101–116, channel 1, fixed velocity 127.** A purpose-built port-3 bank. |
 | How are the LEDs addressed? | **The same notes the pads send**, on the same channel, out of `MIDIOUT3`. |
 | Can the two scripts share port 3? | **Yes.** Note range is the only separator — the clip launcher is 1–16, this is 101–116. Channel cannot separate them; both are channel 1. |

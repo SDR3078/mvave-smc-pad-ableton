@@ -478,9 +478,9 @@ Enter alone records nothing and moves on. 'q' stops and prints what we have.
 
 === knob bank 1 -- press KNOB BANK until you are on it, then Enter.
    encoder 1: turn it a few clicks each way, then Enter.
-      CC 1    absolute   26 msgs  [6, 7, 8, 9, 10, 11, ... (26 distinct)]
+      ch 1  CC 1    absolute   26 msgs  [6, 7, 8, 9, 10, 11, ... (26 distinct)]
    encoder 2: turn it a few clicks each way, then Enter.
-      CC 2    absolute   19 msgs  [40, 41, 42, 43, 44, 45, ... (19 distinct)]
+      ch 1  CC 2    absolute   19 msgs  [40, 41, 42, 43, 44, 45, ... (19 distinct)]
 ```
 
 The verdict for each knob is printed **while you are still holding it**. The
@@ -494,14 +494,14 @@ The final report:
 
 ```
 === encoder map ===
-  bank  encoder  CC    mode         msgs  values
-  1     1        1     absolute       26  6, 7, 8, 9, 10, 11, ... (26 distinct)
-  1     2        2     absolute       19  40, 41, 42, 43, 44, 45, ... (19 distinct)
-  2     7        38    relative       14  63, 65
-  2     8        39    relative       11  63, 65
+  bank  encoder  ch  CC    mode         msgs  values
+  1     1        1   1     absolute       26  6, 7, 8, 9, 10, 11, ... (26 distinct)
+  1     2        1   2     absolute       19  40, 41, 42, 43, 44, 45, ... (19 distinct)
+  2     7        1   9     relative       14  63, 65
+  2     8        1   10    relative       11  63, 65
 
 Sent nothing: bank 1 enc 4
-CLASH: bank 2 CC 44 came from encoders 1, 2
+CLASH: bank 2 ch 1 CC 10 came from encoders 1, 2
 ```
 
 **Reading it:**
@@ -521,7 +521,9 @@ mouse will desync an absolute knob's internal counter immediately, and the box
 will teleport the next time you touch it.
 
 `Sent nothing:` names every encoder that produced no CC. `CLASH:` names every
-case where two encoders in the same bank produced the same CC. Both are printed
+case where two encoders in the same bank produced the same CC **on the same
+channel** — two encoders sharing a CC number across different channels are
+distinguishable, so they are not a clash. Both are printed
 by bank and encoder number, so you know which physical knob to go back to.
 
 Two results worth expecting: bank switching is usually a whole-bank operation, so
@@ -555,13 +557,16 @@ Exactly one mode flag is required and they are mutually exclusive:
 | `--velocities` | list | `coarse` | `--colours` | `coarse`, `all`, or a comma-separated list. See the [`--colours`](#--colours--what-does-velocity-mean-on-an-led) table. |
 
 `--clear` ignores `--lo`/`--hi` and always covers 0–127. Input modes (`--listen`,
-`--curves`, `--knobs`) ignore `--channel` — they record whatever channel arrives,
-and all three now *report* the channel, since a summary that omits it agrees
-equally well with two mutually exclusive theories.
+`--curves`, `--knobs`) ignore `--channel` — they record whatever channel arrives.
+`--listen` and `--knobs` also *report* it, since a summary that omits the channel
+agrees equally well with two mutually exclusive theories; `--curves` keeps only
+velocities and cannot.
 
 Numeric flags are range-checked before any port is opened: `--channel` takes
-1–16, `--lo`/`--hi`/`--velocity`/`--note` take 0–127, and `--velocities` rejects
-anything outside 0–127. A bad value is an argparse error, not a traceback from
+1–16, `--lo`/`--hi`/`--velocity`/`--note` take 0–127, `--step` 1–128, `--seconds`
+1–86400, `--banks` 1–16, `--count` 1–64, `--hold` 0–3600 seconds (rejecting `nan`
+and `inf`), and `--velocities` rejects anything outside 0–127. `--lo` must also
+not exceed `--hi`, which is legal individually but sends nothing. A bad value is an argparse error, not a traceback from
 inside a run you have already started answering prompts for.
 
 ---

@@ -43,9 +43,11 @@ The SMC-PAD enumerates as three independent in/out pairs:
 that order. The manufacturer's material refers to a *generic* port and a
 *Mackie/DAW* port without matching them to those names; port 3 is the DAW one.
 
-All LED work here was done through `MIDIOUT3`. Ports 1 and 2 were later tried and
-**do not light pads** on any note range or channel attempted (2026-08-31) — only
-MCP-typed banks, which are the port-3 ones, respond at all. Mackie mode was the
+All LED work here was done through `MIDIOUT3`. No lighting has ever been obtained
+on ports 1 or 2 in any attempt so far, but what was actually tried was *plain-MIDI
+banks* — not an MCP-typed bank addressed through those outputs, which is a
+different experiment. The single-variable test in 5.6 has not been run, so treat
+"only port 3 lights" as the leading explanation rather than a measurement. Mackie mode was the
 interesting one to begin with precisely because it was the only mode on this
 device that sends anything *back* for lighting.
 
@@ -138,8 +140,9 @@ label.
 
 ### 2.4 The five transport/function buttons
 
-The five buttons above the grid send **notes 17–21** on port 3, with the same
-press/release encoding as the pads.
+The five buttons above the grid send **notes 17–21** on port 3 *on the clip-launcher
+preset*, with the same press/release encoding as the pads. The step-sequencer
+preset sends 117–121 from the same five keys — see below.
 
 The session log records that these buttons had already been configured on the
 device to line up with the script's map before they were measured. It does not
@@ -147,10 +150,12 @@ establish whether 17–21 is a factory default or the result of that
 configuration. **If you own one of these, measure your own buttons before
 trusting 17–21.**
 
-For what it is worth, the `.spc` configuration file's five SysEx-button records
-carry id bytes 17, 18, 19, 20, 21 — the same range (section 5.1). The
-relationship between those id bytes and the notes port 3 emits was never
-established.
+**These notes are per-preset, not a property of the device.** Section 5.2
+establishes that byte 2 of each button record *is* the note the button transmits:
+the launcher preset's five records read 20, 21, 17, 18, 19 and the sequencer
+preset's read 120, 121, 117, 118, 119. The MMC/SysEx payload those records also
+carry is byte-identical in both files while the notes differ, so it is vestigial
+rather than what the device sends.
 
 ---
 
@@ -311,8 +316,8 @@ two readings. Treat the table above as *this unit, on that date*.
 
 In the 2026-08-03 measurement exactly one bank ran ascending with the printed
 labels while the other descended in pairs. After the renumbering, **both** banks
-descend in pairs — encoder 1 takes the higher CC of a pair and encoder 8 the
-lowest overall:
+descend in pairs — encoders 1 and 2 carry the highest pair and encoder 7 the
+lowest CC overall, while within each pair the CCs ascend left to right:
 
 ```
 bank 1, encoders 1..8  ->  CC  7,  8,  5,  6,  3,  4,  1,  2
@@ -370,8 +375,9 @@ depending on a `MapMode` constant whose name varies by host version.
 
 > **One file is one preset.** Confirmed 2026-09-01 by decoding the two exported
 > presets in `reference/` side by side: both are 3539 bytes and **41 bytes
-> differ** — the five button notes, two encoder CCs, and the sixteen pad notes of
-> one bank. Nothing else. A preset holds 5 buttons, 2 knob banks of 8 encoders,
+> differ** — five button notes plus two of their mirrored tails, two encoder CCs,
+> and sixteen pad notes plus all sixteen of their tails (7 + 2 + 32 = 41). The
+> tail mirroring is described in 5.2; nothing else moves. A preset holds 5 buttons, 2 knob banks of 8 encoders,
 > and 8 pad banks of 16 pads; **PAD BANK** moves within those 8, **Shift+Pad**
 > loads a different file.
 >
@@ -422,8 +428,9 @@ whether the arithmetic closes.
 ```
 
 **Byte 2 is the note the button transmits.** Corrected 2026-09-01 by diffing two
-exported presets whose buttons measure 17–21 and 117–121: exactly those five
-bytes differ, by +100, and nothing else in the section moves.
+exported presets whose buttons measure 17–21 and 117–121: those five bytes differ
+by +100, along with the mirrored `tail` byte of the two records that carry one —
+seven bytes in this section, at 1-based offsets 3, 26, 49, 69, 72, 95 and 115.
 
 This section previously read the records as SysEx buttons carrying MMC commands
 (Deferred Play, Fast Forward, Rewind, Stop, Play). The MMC payload is really
@@ -445,17 +452,14 @@ Sixteen records for eight physical encoders — two banks of eight. In
 `17, 18, 13, 14, 11, 12, 9, 10`; `sequencer.spc` differs only in the bottom pair
 of bank 2, `15, 16`.
 
-The records are in **encoder order**, record *k* being encoder *k*, which is what
-makes them line up with section 4.1's table — and it is what puts bank 2's first
-two records (CC 17/18) on the bottom pair of knobs, exactly where the launcher
-script expects its session navigation.
-
-> **Hypothesis, untested.** If section-2 records are stored in the order
-> (enc 7, enc 8, enc 5, enc 6, enc 3, enc 4, enc 1, enc 2) — the same
-> non-obvious internal ordering the pads turn out to have, see 5.3 — then both
-> banks' records line up with the measured CC map exactly. This was derived by
-> laying the file next to the measured table, not verified against a second dump
-> or a second unit.
+> **Inference, not a measurement.** Laid beside section 4.1's measured table,
+> the records line up as record *k* = encoder *k* — which is also what puts bank
+> 2's first two records (CC 17/18) on the bottom pair of knobs, where the
+> launcher script expects its session navigation. But nothing in a six-byte
+> record names an encoder: the file gives an ordered list of CCs and no more, so
+> the ordering rests on 4.1's probe table, not on these bytes. Settling it needs
+> one single-variable test — change one encoder's CC in the editor, re-export,
+> and see which record byte moves.
 
 **Section 3 — pads, `@211`, 128 x 26 B**
 
