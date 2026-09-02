@@ -92,12 +92,11 @@ BTN_RIGHT = 121             # next step page;     +MOD lane bank up
 #      input port, so unless the sequencer preset moves one of them, these CCs
 #      cannot reach the same script as the pads. See the class-level
 #      _active_instances hook in MVave_SMC_STEPSEQ.py for the way out.
-#   2. Encoder assignments are not per pad-preset. The .spc holds exactly 16
-#      encoder records -- 2 banks of 8 (HARDWARE.md 5.2) -- so putting the
-#      sequencer's CCs on the encoders spends one of the two KNOB BANK banks
-#      globally, and both are already accounted for: bank 1 drives macros 1-8
-#      and bank 2 macros 9-16, with the launcher preset spending bank 2's
-#      bottom pair on session navigation instead of the last two macros.
+#   2. Encoder assignments ARE per preset -- the two files in reference/ differ
+#      at exactly encoder records 8 and 9 (HARDWARE.md 4.1) -- so this preset
+#      could carry its own CCs without costing the launcher anything. That is
+#      not the obstacle; point 1 is. The CCs would still arrive on ports 1/2,
+#      where this script cannot hear them.
 #
 # The script works without any of this. Only paint velocity and pattern length
 # are unreachable, and both have mouse equivalents in Live.

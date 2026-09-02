@@ -43,6 +43,12 @@ KNOB_CCS = (CC_LANE, CC_VELOCITY, CC_LENGTH, CC_SPARE)
 # Clip properties whose change has to redraw the grid even though no note moved.
 LOOP_PROPERTIES = ('loop_start', 'loop_end')
 
+# How far the MOD + arrow lane picker can travel, as a bank index either side of
+# LANE_SELECT_BASE. Derived so the clamped base reaches both 0 and 112 -- i.e.
+# every pitch 0-127 is selectable -- whatever LANE_SELECT_BASE is set to.
+LANE_BANK_MIN = -((LANE_SELECT_BASE // 16) + 1)
+LANE_BANK_MAX = ((112 - LANE_SELECT_BASE) // 16) + 1
+
 
 def _clamp(value, low, high):
     return max(low, min(value, high))
@@ -126,6 +132,7 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         self._mod = False
         self._follow = FOLLOW_PLAYHEAD
         self._lane_base = LANE_SELECT_BASE
+        self._lane_bank = 0                     # MOD + arrow moves this, not the base
         self._paint_velocity = PAINT_VELOCITY
         self._btn_led = {}                      # what each button was last told
         self._grid = [COLOR_STEP_OFF] * 16      # what the clip says
@@ -493,16 +500,21 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         self._render()
 
     def _lane_base_by(self, delta):
-        """Move the MOD + pad lane picker up or down a bank of 16 pitches."""
-        # Refused rather than clamped. Clamping knocks the base off the 16-pitch
-        # series it started on -- from 36 the way down is 36, 20, 4, then 0 --
-        # and once it lands on 0 the series is 0+16k, so the default drum-rack
-        # bank at 36 can never be selected again without reloading the script.
-        # Declining the move keeps every reachable base on the original grid.
-        new_base = self._lane_base + delta
-        if not 0 <= new_base <= 112:
-            return
-        self._lane_base = new_base
+        """Move the MOD + pad lane picker up or down a bank of 16 pitches.
+
+        The bank INDEX is the state and the base is derived from it, because
+        the two obvious implementations each lose something. Clamping the base
+        directly knocks it off the 16-pitch series it started on -- 36, 20, 4,
+        then 0 -- and strands it on 0+16k, where the default drum-rack bank at
+        36 is gone. Refusing an out-of-range move keeps the series but puts
+        pitches 0-3 and 116-127 permanently out of reach, and MOD + pad is the
+        only lane control this hardware can offer. Moving the index and
+        clamping the derived base keeps both: the end stops are pitch 0 and
+        112, and stepping back off either stop returns to the original series.
+        """
+        self._lane_bank = _clamp(self._lane_bank + delta // 16,
+                                 LANE_BANK_MIN, LANE_BANK_MAX)
+        self._lane_base = _clamp(LANE_SELECT_BASE + 16 * self._lane_bank, 0, 112)
         self._render()
 
     def _page_by(self, delta):
@@ -558,8 +570,13 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         clip = self._clip
         if clip is None:
             return 0
-        length = clip.loop_end - clip.loop_start
-        return _clamp(int(round(length / STEP)), 0, STEPS_MAX)
+        # Ceiling, expressed through the same floor the rest of the file uses.
+        # round() disagrees with step_at() whenever the loop is not a whole
+        # number of 16ths -- half of all lengths -- and because BOTH the render
+        # gate and the write gate ask this function, they agreed with each other
+        # and were wrong together: the last step went dark and refused to clear.
+        return _clamp(step_at(clip.loop_end - 1e-9, clip.loop_start) + 1,
+                      0, STEPS_MAX)
 
     def _clamp_pages(self):
         last = max(0, self._step_count() - 1)
