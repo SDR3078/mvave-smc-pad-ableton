@@ -13,7 +13,7 @@ this file is what got built and section 4 says why.
 > **Status: running in Live on real hardware** (2026-08-31). Every value in
 > `MIDI_Map.py` is measured rather than assumed — section 5 has the table and
 > [HARDWARE.md](HARDWARE.md) has the method. The logic is also exercised by
-> `tools/stepseq_selftest.py` (92 checks, no controller and no DAW required),
+> `tools/stepseq_selftest.py` (no controller and no DAW required),
 > which is what makes a change safe to attempt without a Live restart.
 >
 > Two things the first real session changed: the visible window now follows the
@@ -82,11 +82,13 @@ base by 16, so all 128 pitches are reachable. The two end stops land on 0 and
 stop returns to the series — the picker tracks a bank index, not the base, so a
 trip to either end does not strand it.
 
-**The encoder CCs are not wired.** Both knob banks are spent on device macros for
-the other script ([HARDWARE.md 4.1](HARDWARE.md)) and there is no third bank, so
-the sequencer's four CCs have nowhere to live. Paint velocity and pattern length
-are only settable in `MIDI_Map.py` or with the mouse. The handlers remain, so
-they work the moment a bank frees up.
+**The encoder CCs are not wired**, and freeing a knob bank would not change that.
+Encoder assignments are per preset, so this preset could carry its own CCs at no
+cost to the launcher ([HARDWARE.md 4.1](HARDWARE.md)) — but the encoders transmit
+on ports 1 and 2 and a Remote Script gets one input port, so those CCs would
+still never reach this script. Paint velocity and pattern length are settable in
+`MIDI_Map.py` or with the mouse. The handlers remain, and they work the moment a
+sibling script forwards to `handle_encoder_cc()`.
 
 Pad colours, from the measured palette ([HARDWARE.md 3.2](HARDWARE.md)):
 teal a step that holds a note · amber the playhead · white the playhead sitting
@@ -145,10 +147,11 @@ of its Phase 0 assumptions are already contradicted by measurements in this
 repo. The architecture survived all four; the hardware constants did not.
 
 **The knobs are probably unreachable, and it is not a software problem.** The
-pads appear only on port 3 and the encoders only on ports 1 and 2, never both
-([HARDWARE.md 1.1](HARDWARE.md)). A Remote Script gets exactly one input port.
+pads this preset uses are MCP-typed and so appear only on port 3, while the
+encoders appear only on ports 1 and 2 ([HARDWARE.md 1.1](HARDWARE.md)); no port
+carries both. A Remote Script gets exactly one input port.
 Encoder assignments *are* per preset — the two files in `reference/` differ at
-exactly encoder records 8 and 9 ([HARDWARE.md 4.1](HARDWARE.md)) — so this preset
+exactly encoder records 9 and 10, bank 2's first two ([HARDWARE.md 5.2](HARDWARE.md)) — so this preset
 could carry its own CC 20–23 without costing the launcher anything. What it
 cannot do is get them to this script: the encoders never appear on port 3, and a
 Remote Script gets one input port. The way in is a forward from the encoder
@@ -215,7 +218,7 @@ method are in [HARDWARE.md](HARDWARE.md); this is what the sequencer depends on.
 | Do pads self-light on press? | **No.** Four rounds, ~78 strikes, no LED movement, and a host-set colour survives being struck. |
 | Does velocity select the LED colour? | **Yes**, an absolute palette index. Everything usable is below 64; 64–112 is one flat blue. |
 | How does a pad turn off? | **Note-on velocity 0.** A real note-off is ignored, silently. |
-| Do the encoders reach this script? | **No, and they cannot.** Both knob banks are spent on the other script's device macros and there is no third bank. |
+| Do the encoders reach this script? | **No** — not directly. The encoders never appear on port 3, and this script owns port 3. Assignments are per preset, so the CCs are free; the port is the obstacle, and a forward from `MVave_SMC_KNOBS` is the way in. |
 
 **The one trade you cannot configure around**, and *why* — corrected 2026-08-31:
 this is not a device quirk but a consequence of the assignment type. **MCP

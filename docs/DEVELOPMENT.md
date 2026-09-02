@@ -182,7 +182,8 @@ port, write one script.
 
 ## How the knob script reaches the pad script's session box
 
-Encoders 7 and 8 move Live's session box (the red rectangle) — one across tracks,
+Bank 2's encoders 1 and 2 — the bottom pair — move Live's session box (the red
+rectangle), one across tracks,
 one through scenes. The obvious implementation, a `SessionComponent` inside
 `MVave_SMC_KNOBS`, is wrong.
 
@@ -334,7 +335,7 @@ pad's note is swallowed before the session component sees it.
 | File | What it is |
 |---|---|
 | `__init__.py` | `create_instance()`. |
-| `MVave_SMC_KNOBS.py` | Everything: constants, the `ControlSurface` subclass, the relative-encoder decode, the cross-script session lookup. ~370 lines, no subcomponents. |
+| `MVave_SMC_KNOBS.py` | Everything: constants, the `ControlSurface` subclass, the relative-encoder decode, the cross-script session lookup — all of it in one file, no subcomponents. |
 
 Its constants sit at the top of the file rather than in a separate map, because
 there are only a handful:
@@ -372,16 +373,18 @@ The class has four responsibilities, in four small blocks:
 2. `_on_selected_track_changed()` — point both that component and the script's own
    `_target_device` at the newly selected track's device.
 3. `build_midi_map()` / `receive_midi()` / `_navigate()` / `_macro()` — forward and
-   intercept all sixteen CCs, decoding the relative encoding by hand and writing
+   intercept all eighteen CCs, decoding the relative encoding by hand and writing
    `device.parameters[n]` directly.
-4. `_pad_session()` / `_bank()` / `_offset()` — move the other script's session box.
+4. `_pad_session()` / `_bank()` / `_probe_value()` — move the other script's session box.
 
-**`_offset()` reads the session's offsets defensively:**
+**`_probe_value()` reads the session's getters defensively:**
 
 ```python
 method = getattr(session, method_name, None)   # 'track_offset'
-if method is not None:
+if callable(method):
     return method()
+if method is not None:
+    return method          # spelled as a plain attribute on this version
 return getattr(session, attr_name, None)       # '_track_offset'
 ```
 
@@ -487,7 +490,7 @@ Three decisions, each with a reason:
 
 This is the pattern to copy whenever you touch an API surface that varies by host
 version: probe with `getattr`, degrade to the subset that exists, say so once.
-`MVave_SMC_KNOBS._offset()` is the same idea applied to two different framework
+`MVave_SMC_KNOBS._probe_value()` is the same idea applied to two different framework
 spellings of the same value.
 
 ---
@@ -671,7 +674,7 @@ the same habit. `SessionComponent.set_offsets()` asserts on a negative offset, s
 `_bank()` clamps first:
 
 ```python
-new_track = _clamp(track_offset + d_track, track_count - session.width())
+new_track = _clamp(track_offset + d_track, track_count - width)
 ```
 
 An assertion raised from a MIDI callback takes the script down while you are

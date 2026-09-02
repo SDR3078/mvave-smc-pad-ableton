@@ -556,10 +556,13 @@ def main():
         mode.add_argument("--" + flag, dest="mode", action="store_const", const=fn)
 
     args = p.parse_args()
-    if args.lo > args.hi:
+    if args.mode in (cmd_light, cmd_sweep) and args.lo > args.hi:
         # Individually legal, jointly empty: range(100, 6) sends nothing, and
-        # every mode still prints its "did anything light up?" prompt. The
-        # human watches a dark grid and records the wrong answer.
+        # the mode still prints its "did anything light up?" prompt, so the
+        # human watches a dark grid and records the wrong answer. Scoped to the
+        # two modes that read the range: --clear documents that it ignores
+        # --lo/--hi entirely, and refusing to clear a lit grid over an unused
+        # flag pair would break the one command that recovers from a bad run.
         p.error("--lo (%d) must not exceed --hi (%d)" % (args.lo, args.hi))
     args.mode(args)
 

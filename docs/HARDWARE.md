@@ -103,7 +103,8 @@ script and port 2 is left unassigned with Remote on.
 ### 2.1 Note map
 
 Sixteen pads, MIDI channel 1, **notes 1–16 in reading order** — top-left is 1,
-bottom-right is 16:
+bottom-right is 16. These are the *clip-launcher* preset's numbers; the note map
+is per-preset, not a device property (see 2.4):
 
 ```
  1   2   3   4
@@ -132,7 +133,8 @@ off — see section 3.3.
 
 Port 3 is the "DAW"/Mackie port, and that name tells you nothing about the
 protocol on it. Real MCU would be arm 0–7, solo 8–15, mute 16–23, select 24–31,
-transport 91–95. The SMC-PAD sends 1–16 and 17–21.
+transport 91–95. The SMC-PAD sends 1–16 and 17–21 on the preset measured here (see 2.4 — another
+preset sends 101–116 and 117–121).
 
 Assuming MCU numbering because of the port's name was one of the first wrong
 calls in this project and cost real time. Measure the port; do not read its
@@ -452,14 +454,20 @@ Sixteen records for eight physical encoders — two banks of eight. In
 `17, 18, 13, 14, 11, 12, 9, 10`; `sequencer.spc` differs only in the bottom pair
 of bank 2, `15, 16`.
 
-> **Inference, not a measurement.** Laid beside section 4.1's measured table,
-> the records line up as record *k* = encoder *k* — which is also what puts bank
-> 2's first two records (CC 17/18) on the bottom pair of knobs, where the
-> launcher script expects its session navigation. But nothing in a six-byte
-> record names an encoder: the file gives an ordered list of CCs and no more, so
-> the ordering rests on 4.1's probe table, not on these bytes. Settling it needs
-> one single-variable test — change one encoder's CC in the editor, re-export,
-> and see which record byte moves.
+> **Two records measured, the rest inferred.** Nothing in a six-byte record names
+> an encoder, so the record → encoder correspondence cannot be read from one file.
+> But the two presets in `reference/` *are* the single-variable test, already run:
+> they differ in exactly two encoder bytes — the CC fields of **records 9 and 10**,
+> 1-based file offsets 167 and 173, where `17→15` and `18→16`. Section 4.1
+> measured those same two CCs as bank 2's encoders 1 and 2, so records 9 and 10
+> **are** encoders 1 and 2, read off the bytes rather than assumed. That also
+> refutes the ordering this section once proposed — `(enc 7, 8, 5, 6, 3, 4, 1, 2)`
+> — under which encoders 1 and 2 would sit at records 15 and 16, whose bytes are
+> identical in both files.
+>
+> The other six positions in each bank remain inferred from 4.1's table, on the
+> assumption that one ordering governs the whole section. Changing one more
+> encoder's CC and re-exporting would close them the same way.
 
 **Section 3 — pads, `@211`, 128 x 26 B**
 

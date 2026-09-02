@@ -205,9 +205,9 @@ Ctrl+C to stop early.
      3.34s  MIDIIN3 (SMC-PAD) 2    note_on channel=0 note=1 velocity=0 time=0
 
 --- summary: 21 distinct controls ---
-  port                   type           ch   num    count  values seen
-  MIDIIN3 (SMC-PAD) 2    note_on        1    1           8  0, 127
-  MIDIIN3 (SMC-PAD) 2    note_on        1    2           4  0, 127
+  port                   type           ch  num    count  values seen
+  MIDIIN3 (SMC-PAD) 2    note_on        1   1          8  0, 127
+  MIDIIN3 (SMC-PAD) 2    note_on        1   2          4  0, 127
 
 MIDI channels seen: 1
 ```
@@ -478,9 +478,9 @@ Enter alone records nothing and moves on. 'q' stops and prints what we have.
 
 === knob bank 1 -- press KNOB BANK until you are on it, then Enter.
    encoder 1: turn it a few clicks each way, then Enter.
-      ch 1  CC 1    absolute   26 msgs  [6, 7, 8, 9, 10, 11, ... (26 distinct)]
+      ch 1  CC 7    relative   26 msgs  [63, 65]
    encoder 2: turn it a few clicks each way, then Enter.
-      ch 1  CC 2    absolute   19 msgs  [40, 41, 42, 43, 44, 45, ... (19 distinct)]
+      ch 1  CC 8    relative   19 msgs  [63, 65]
 ```
 
 The verdict for each knob is printed **while you are still holding it**. The
@@ -495,13 +495,14 @@ The final report:
 ```
 === encoder map ===
   bank  encoder  ch  CC    mode         msgs  values
-  1     1        1   1     absolute       26  6, 7, 8, 9, 10, 11, ... (26 distinct)
-  1     2        1   2     absolute       19  40, 41, 42, 43, 44, 45, ... (19 distinct)
+  1     1        1   7     relative       26  63, 65
+  1     2        1   8     relative       19  63, 65
+  2     3        1   10    relative        9  63, 65
   2     7        1   9     relative       14  63, 65
   2     8        1   10    relative       11  63, 65
 
 Sent nothing: bank 1 enc 4
-CLASH: bank 2 ch 1 CC 10 came from encoders 1, 2
+CLASH: bank 2 ch 1 CC 10 came from encoders 3, 8
 ```
 
 **Reading it:**
@@ -616,7 +617,7 @@ than leaving them to be spotted:
 
 ```
 Sent nothing: bank 1 enc 4
-CLASH: bank 2 CC 44 came from encoders 1, 2
+CLASH: bank 2 ch 1 CC 10 came from encoders 3, 8
 ```
 
 A silent knob and a duplicated CC are the two mistakes that produce a plausible
