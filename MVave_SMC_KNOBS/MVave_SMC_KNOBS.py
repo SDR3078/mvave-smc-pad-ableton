@@ -7,7 +7,8 @@
 #   slot 1   MVave_SMC_PAD     in MIDIIN3 / out MIDIOUT3   pads, buttons, LEDs
 #   slot 2   MVave_SMC_KNOBS   in SMC-PAD (port 1)         the 8 encoders
 #
-# BOTH knob banks are used, giving 14 macros plus two navigation encoders:
+# BOTH knob banks are used: on the launcher preset that is 14 macros plus two
+# navigation encoders; on the sequencer preset, 16 macros and no navigation.
 #
 #   bank 1, knobs 7 8 5 6 3 4 1 2   ->  macros 1-8
 #   bank 2, knobs 7 8 5 6 3 4       ->  macros 9-14
@@ -30,6 +31,8 @@
 # combination mode. Instead it reaches the pad script's session through the
 # class-level _active_instances list and moves the real box.
 from __future__ import with_statement
+
+import traceback
 
 import Live
 from _Framework.ControlSurface import ControlSurface
@@ -85,10 +88,13 @@ MACRO_BY_CC = {
     15: 15, 16: 16,
 }
 
-# One click moves this fraction of a parameter's range. A rack macro is 0-127,
-# so 128 gives exactly one unit per click; a continuous parameter with a
-# different range scales proportionally rather than jumping.
-STEPS_PER_SWEEP = 128.0
+# One click moves this fraction of a parameter's range. A rack macro runs 0-127,
+# so its range is 127 and this gives exactly one unit per click; a continuous
+# parameter with a different range scales proportionally rather than jumping.
+# (128 was the obvious-looking number and is off by one: it moves 0.992 per
+# click, so macro values never land on integers and one click per sweep is
+# invisible.)
+STEPS_PER_SWEEP = 127.0
 
 
 def _clamp(value, ceiling):
@@ -96,7 +102,7 @@ def _clamp(value, ceiling):
 
 
 class MVave_SMC_KNOBS(ControlSurface):
-    __doc__ = " Encoder half of the M-Vave SMC-PAD: session box + 14 device macros "
+    __doc__ = " Encoder half of the M-Vave SMC-PAD: session box + up to 16 device macros "
 
     def __init__(self, c_instance):
         ControlSurface.__init__(self, c_instance)
@@ -125,6 +131,14 @@ class MVave_SMC_KNOBS(ControlSurface):
         self.set_device_component(self._device)
 
     def _on_selected_track_changed(self):
+        try:
+            self._follow_selected_track()
+        except Exception:
+            # Live calls this on every track click. Letting it raise would take
+            # the script down for the rest of the session.
+            self._log_exception('selected track changed')
+
+    def _follow_selected_track(self):
         # Follow the selection: the same knobs, whatever track you click on.
         ControlSurface._on_selected_track_changed(self)
         track = self.song().view.selected_track
@@ -143,8 +157,30 @@ class MVave_SMC_KNOBS(ControlSurface):
             self.log_message('MVave_SMC_KNOBS: device -> %s'
                              % (device_to_select.name if device_to_select else 'None'))
 
+    def _current_device(self):
+        """The device to write to, resolved at write time rather than cached.
+
+        _on_selected_track_changed is the only hook this script has, and it
+        fires on a TRACK change only. A cached target therefore goes stale the
+        moment you click a different device on the same track: Live's blue hand
+        moves, because DeviceComponent has its own appointed-device listener,
+        while the cache does not -- so the knobs quietly edit the device you
+        just navigated away from, with nothing to show for it. Delete the
+        cached device and the reference dangles, and the next click raises
+        inside a MIDI callback, which takes the whole script down.
+
+        DeviceComponent already follows the appointed device, so ask it. The
+        cached value survives only as a fallback for a _Framework version whose
+        DeviceComponent has no device() getter.
+        """
+        component = self._device
+        getter = getattr(component, 'device', None) if component is not None else None
+        if callable(getter):
+            return getter()
+        return self._target_device
+
     def _adjust_macro(self, macro, delta):
-        device = self._target_device
+        device = self._current_device()
         if device is None:
             self._log_once('no device selected yet -- click a track to bind one')
             return
@@ -175,14 +211,22 @@ class MVave_SMC_KNOBS(ControlSurface):
             Live.MidiMap.forward_midi_cc(script_handle, midi_map_handle, CHANNEL, cc)
 
     def receive_midi(self, midi_bytes):
-        if len(midi_bytes) == 3 and (midi_bytes[0] & 0xF0) == 0xB0:
-            cc, value = midi_bytes[1], midi_bytes[2]
-            if cc in NAV_CCS:
-                self._navigate(cc, value)
-                return
-            if cc in MACRO_BY_CC:
-                self._macro(cc, value)
-                return
+        try:
+            if len(midi_bytes) == 3 and (midi_bytes[0] & 0xF0) == 0xB0:
+                cc, value = midi_bytes[1], midi_bytes[2]
+                if cc in NAV_CCS:
+                    self._navigate(cc, value)
+                    return
+                if cc in MACRO_BY_CC:
+                    self._macro(cc, value)
+                    return
+        except Exception:
+            # An uncaught exception here disables the entire script until Live
+            # restarts -- all fourteen macros AND both navigation encoders --
+            # with nothing in the UI to say so. Clamping alone was the previous
+            # defence, which only covers the failures we thought of.
+            self._log_exception('receive_midi')
+            return
         # Anything unclaimed belongs to the framework. Swallowing it here is the
         # classic silent failure in this codebase, so it is forwarded explicitly.
         ControlSurface.receive_midi(self, midi_bytes)
@@ -235,6 +279,11 @@ class MVave_SMC_KNOBS(ControlSurface):
             self._logged.add(message)
             self.log_message('MVave_SMC_KNOBS: ' + message)
 
+    def _log_exception(self, where):
+        # Through _log_once, so a fault that repeats on every one of the
+        # hundreds of messages a single knob turn produces is written once.
+        self._log_once('exception in %s\n%s' % (where, traceback.format_exc()))
+
     def _bank(self, d_track, d_scene):
         session = self._pad_session()
         if session is None:
@@ -265,6 +314,11 @@ class MVave_SMC_KNOBS(ControlSurface):
         # attributes in others, and it is not on the machine this was written
         # on, so try both rather than guess.
         method = getattr(session, method_name, None)
-        if method is not None:
+        if callable(method):
             return method()
+        if method is not None:
+            # This version spells it as a plain attribute under the same name.
+            # Calling it would raise TypeError inside a MIDI callback, which is
+            # the exact failure the two-spellings dance exists to avoid.
+            return method
         return getattr(session, attr_name, None)
