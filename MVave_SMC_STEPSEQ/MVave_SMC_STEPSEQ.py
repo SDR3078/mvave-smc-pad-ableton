@@ -40,6 +40,9 @@ VIEW_OVERVIEW = 1
 
 KNOB_CCS = (CC_LANE, CC_VELOCITY, CC_LENGTH, CC_SPARE)
 
+# Clip properties whose change has to redraw the grid even though no note moved.
+LOOP_PROPERTIES = ('loop_start', 'loop_end')
+
 
 def _clamp(value, low, high):
     return max(low, min(value, high))
@@ -58,7 +61,7 @@ def decode_relative(value, mode):
 
 
 def lane_for_pad(pad_index, base=LANE_SELECT_BASE):
-    """SHIFT + pad -> a drum-rack pitch.
+    """MOD + pad -> a drum-rack pitch.
 
     A Live drum rack ascends bottom-up: the lowest note sits bottom-left and the
     pitch climbs left to right, then upward. The pads are indexed top-left
@@ -130,6 +133,8 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         self._led = [None] * 16                 # what the device was last told
         self._playhead = None
         self._unhandled = set()
+        self._exceptions_logged = set()
+        self._missing_listeners = []
         self._pads = {}
         for index, note in enumerate(PAD_NOTES):
             self._pads[note] = index
@@ -174,8 +179,16 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         ControlSurface.refresh_state(self)
         if not self._ready:
             return
-        self._led = [None] * 16
-        self._render()
+        try:
+            self._led = [None] * 16
+            self._btn_led = {}      # the buttons went dark with the pads
+            self._render()
+        except Exception:
+            # The only Live-called entry point that reads the clip without a
+            # guard. If the bound clip died before Live re-enabled the surface,
+            # the first attribute access raises straight into Live and takes
+            # the script down until a restart.
+            self._log_exception('refresh_state')
 
     # ------------------------------------------------------------------- midi
 
@@ -302,6 +315,7 @@ class MVave_SMC_STEPSEQ(ControlSurface):
                 clip.remove_playing_position_listener(self._on_playhead)
             if clip.playing_status_has_listener(self._on_playhead):
                 clip.remove_playing_status_listener(self._on_playhead)
+            self._detach_loop_listeners(clip)
         except Exception:
             pass
 
@@ -327,7 +341,47 @@ class MVave_SMC_STEPSEQ(ControlSurface):
             clip.add_notes_listener(self._on_notes_changed)
             clip.add_playing_position_listener(self._on_playhead)
             clip.add_playing_status_listener(self._on_playhead)
+            self._attach_loop_listeners(clip)
         self._clip = clip
+        self._clamp_pages()
+        self._render()
+
+    def _attach_loop_listeners(self, clip):
+        """Watch the loop brace, so a mouse drag is not invisible.
+
+        Dragging the brace changes no note, so the notes listener stays silent.
+        Without this the grid keeps showing a page the loop no longer has, and
+        every pad on it is refused by toggle_step without writing anything --
+        which means the notes listener never fires either, and the stale page
+        stays lit until some unrelated event happens to call _clamp_pages().
+
+        Probed rather than assumed, the same way the pad script probes its
+        clip-slot setters: on a Live whose Clip does not expose these, the cost
+        is the stale grid described above, not a dead script.
+        """
+        for name in LOOP_PROPERTIES:
+            adder = getattr(clip, 'add_%s_listener' % name, None)
+            if adder is None:
+                if name not in self._missing_listeners:
+                    self._missing_listeners.append(name)
+                    self._log('clip has no add_%s_listener() -- the grid will '
+                              'not follow the loop brace' % name)
+                continue
+            adder(self._on_loop_changed)
+
+    def _detach_loop_listeners(self, clip):
+        for name in LOOP_PROPERTIES:
+            has = getattr(clip, '%s_has_listener' % name, None)
+            remover = getattr(clip, 'remove_%s_listener' % name, None)
+            if has is None or remover is None:
+                continue
+            if has(self._on_loop_changed):
+                remover(self._on_loop_changed)
+
+    @_guarded('loop listener')
+    def _on_loop_changed(self):
+        # The brace moved: the visible page may now be past the end of the loop,
+        # and the steps beyond it have to go dark.
         self._clamp_pages()
         self._render()
 
@@ -344,9 +398,13 @@ class MVave_SMC_STEPSEQ(ControlSurface):
             return
         if not 0 <= step_index < STEPS_MAX:
             return
+        if step_index >= self._step_count():
+            # v1 edits inside the loop only. Asking _step_count() rather than
+            # comparing times is what keeps this in step with the render: both
+            # sides now call the same step in or out of the loop, so "this pad
+            # is lit" and "pressing this pad clears it" cannot disagree.
+            return
         time = clip.loop_start + step_index * STEP
-        if time >= clip.loop_end - 1e-9:
-            return                          # v1 edits inside the loop only
         existing = clip.get_notes_extended(pitch, 1, time, STEP)
         if len(existing):
             clip.remove_notes_extended(pitch, 1, time, STEP)
@@ -390,8 +448,8 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         elif number == BTN_PLAY:
             self._toggle_transport()
         elif number == BTN_LEFT:
-            # Held SHIFT turns the arrows into a lane-bank control, because
-            # SHIFT + pad only reaches the 16 pitches from _lane_base and a drum
+            # Held MOD turns the arrows into a lane-bank control, because
+            # MOD + pad only reaches the 16 pitches from _lane_base and a drum
             # rack has more rows than that.
             self._lane_base_by(-16) if self._mod else self._page_by(-1)
         elif number == BTN_RIGHT:
@@ -435,8 +493,16 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         self._render()
 
     def _lane_base_by(self, delta):
-        """Move the SHIFT + pad lane picker up or down a bank of 16 pitches."""
-        self._lane_base = _clamp(self._lane_base + delta, 0, 112)
+        """Move the MOD + pad lane picker up or down a bank of 16 pitches."""
+        # Refused rather than clamped. Clamping knocks the base off the 16-pitch
+        # series it started on -- from 36 the way down is 36, 20, 4, then 0 --
+        # and once it lands on 0 the series is 0+16k, so the default drum-rack
+        # bank at 36 can never be selected again without reloading the script.
+        # Declining the move keeps every reachable base on the original grid.
+        new_base = self._lane_base + delta
+        if not 0 <= new_base <= 112:
+            return
+        self._lane_base = new_base
         self._render()
 
     def _page_by(self, delta):
@@ -593,7 +659,10 @@ class MVave_SMC_STEPSEQ(ControlSurface):
                                         16 * STEP)
         for note in notes:
             index = step_at(note.start_time, clip.loop_start) - first
-            if 0 <= index < 16:
+            # Gated on `total` as well as on the window: Live keeps notes that
+            # sit past the loop brace, and the read window can reach them.
+            # Lighting one would promise a step that toggle_step refuses.
+            if 0 <= index < 16 and first + index < total:
                 self._grid[index] = COLOR_STEP_ON
                 self._on[index] = True
 
@@ -611,7 +680,7 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         for note in notes:
             row = int(note.pitch) - self._lane_window
             col = step_at(note.start_time, clip.loop_start) - first
-            if 0 <= row < 4 and 0 <= col < 4:
+            if 0 <= row < 4 and 0 <= col < 4 and first + col < total:
                 self._grid[row * 4 + col] = LANE_COLORS[row]
                 self._on[row * 4 + col] = True
 
@@ -679,7 +748,21 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         self.log_message(LOG_PREFIX + message)
 
     def _log_exception(self, where):
-        self._log('exception in %s\n%s' % (where, traceback.format_exc()))
+        # Latched, like _log_unhandled below, and for a sharper reason: _guarded
+        # wraps _on_playhead, which fires per audio buffer. One persistent fault
+        # there would write a full traceback ~90 times a second and bury the
+        # first copy -- the only one still holding the original context.
+        #
+        # Keyed on the last line of the traceback (the exception type and
+        # message) rather than on `where` alone, so a later, different fault in
+        # the same place is still heard. Capped like _unhandled so a fault whose
+        # message varies every time cannot fill Log.txt either.
+        text = traceback.format_exc()
+        signature = (where, text.strip().rsplit('\n', 1)[-1])
+        if signature in self._exceptions_logged or len(self._exceptions_logged) >= 32:
+            return
+        self._exceptions_logged.add(signature)
+        self._log('exception in %s\n%s' % (where, text))
 
     def _log_unhandled(self, status, data1, data2):
         # Phase 0's real payload: anything the device sends that MIDI_Map.py does
