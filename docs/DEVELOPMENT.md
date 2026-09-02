@@ -231,9 +231,10 @@ ordinary intra-process import. There is no IPC.
    `sys.modules` dictionary hit, and the rest is two `getattr`s on a
    one-element list.
 
-Failures are reported once, not per message — `_log_problem()` latches on
-`self._problem_logged`, because an encoder generates hundreds of messages and a
-per-turn log line would bury `Log.txt`. `_navigate()` uses the same
+Failures are reported once, not per message — `_log_once()` latches on the
+`self._logged` set (keyed on the message, so a later distinct problem is not
+hidden by an earlier one), because an encoder generates hundreds of messages and
+a per-turn log line would bury `Log.txt`. `_navigate()` uses the same
 one-shot-logging trick with `_first_nav_logged` for the positive case: one line
 proving the pipe works, then silence.
 
@@ -333,7 +334,7 @@ pad's note is swallowed before the session component sees it.
 | File | What it is |
 |---|---|
 | `__init__.py` | `create_instance()`. |
-| `MVave_SMC_KNOBS.py` | Everything: constants, the `ControlSurface` subclass, the relative-encoder decode, the cross-script session lookup. ~195 lines, no subcomponents. |
+| `MVave_SMC_KNOBS.py` | Everything: constants, the `ControlSurface` subclass, the relative-encoder decode, the cross-script session lookup. ~325 lines, no subcomponents. |
 
 Its constants sit at the top of the file rather than in a separate map, because
 there are only a handful:
@@ -341,13 +342,14 @@ there are only a handful:
 ```python
 CHANNEL  = 0
 CENTRE   = 64
-CC_TRACK = 38            # bank 2, encoder 1
-CC_SCENE = 39            # bank 2, encoder 2
+CC_TRACK = 17            # bank 2, encoder 1
+CC_SCENE = 18            # bank 2, encoder 2
 MACRO_BY_CC = {          # CC -> macro number, 1-based
     1: 1,  2: 2,  3: 3,  4: 4,  5: 5,  6: 6,  7: 7,  8: 8,     # bank 1
-    44: 9, 45: 10, 42: 11, 43: 12, 40: 13, 41: 14,             # bank 2
+    9: 9,  10: 10, 11: 11, 12: 12, 13: 13, 14: 14,             # bank 2
+    15: 15, 16: 16,                    # bank 2 bottom pair, sequencer preset
 }
-STEPS_PER_SWEEP = 128.0  # one click = this fraction of a parameter's range
+STEPS_PER_SWEEP = 127.0  # one click = this fraction of a parameter's range
 ```
 
 Macro *N* is `device.parameters[N]` — index 0 is the device on/off switch, so the
@@ -578,7 +580,7 @@ map. Then, for each CC you want to handle yourself:
 Live.MidiMap.forward_midi_cc(script_handle, midi_map_handle, CHANNEL, cc)
 ```
 
-Without that forwarding call, `receive_midi` never sees CC 38/39 at all — Live
+Without that forwarding call, `receive_midi` never sees CC 17/18 at all — Live
 routes mapped messages directly and only forwards what you explicitly ask for.
 Symptom: the encoder does nothing, and your handler's log line never appears
 because your handler never runs.
@@ -843,7 +845,9 @@ template offers and re-enabling them is uncommenting.
 
 **Line endings differ between the two packages.** `MVave_SMC_PAD/` is CRLF
 throughout (it came off a Windows machine with the template);
-`MVave_SMC_KNOBS/` and `tools/` are LF. `.gitattributes` sets `* -text` so git
+`MVave_SMC_KNOBS/`, `MVave_SMC_STEPSEQ/` and `tools/*.py` are LF, while
+`tools/run_probe.bat` is CRLF — deliberately, because `cmd.exe` can fail to
+resolve `goto :label` in a batch file saved with bare LF endings. `.gitattributes` sets `* -text` so git
 stores both exactly as they are rather than producing a whole-file diff on every
 checkout. Python reads both without complaint. **This bites shell tooling:** `sed`
 patterns anchored on `$` silently no-op against CRLF lines. If a scripted edit

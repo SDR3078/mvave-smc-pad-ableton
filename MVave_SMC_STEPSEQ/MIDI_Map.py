@@ -45,12 +45,13 @@ PAD_NOTES_B = ()
 
 # The five buttons above the grid.
 #
-# MEASURED 2026-08-02: notes 17-21 on MIDI channel 1, port 3, with the same
-# press/release encoding as the pads (HARDWARE.md 2.4). They are a separate
-# section of the .spc from the pad banks, so they are very likely global rather
-# than per-preset -- hence channel 1 here while the pads are on channel 16.
+# MEASURED 2026-08-31: notes 117-121 on MIDI channel 1, port 3, with the same
+# press/release encoding as the pads (HARDWARE.md 2.4).
 #
-# Physically: 17 play, 18 stop, 19 record, 20 '<', 21 '>'.
+# Physically: 117 play, 118 stop, 119 record, 120 '<', 121 '>'. The launcher
+# preset's own bank sends 17-21 from the same five keys -- they are per-preset,
+# which is what lets both scripts sit on port 3 without ever seeing each other's
+# traffic. Confirmed by decoding both presets in reference/.
 BUTTON_CHANNEL = 0
 BUTTON_IS_CC = False        # set True if you manage to reassign them to CCs
 
@@ -73,8 +74,8 @@ BUTTON_IS_CC = False        # set True if you manage to reassign them to CCs
 BTN_PLAY = 117              # play/stop toggle -- see below for why the script owns it
 BTN_VIEW = 118              # focus <-> overview
 BTN_MOD = 119             # momentary modifier: hold for the lane picker
-BTN_LEFT = 120              # previous step page; +SHIFT lane bank down
-BTN_RIGHT = 121             # next step page;     +SHIFT lane bank up
+BTN_LEFT = 120              # previous step page; +MOD lane bank down
+BTN_RIGHT = 121             # next step page;     +MOD lane bank up
 
 # Why the script implements transport at all: claiming a port with a Control
 # Surface disables Track/Sync/Remote on it (HARDWARE.md 1.4), so any button the
@@ -94,8 +95,9 @@ BTN_RIGHT = 121             # next step page;     +SHIFT lane bank up
 #   2. Encoder assignments are not per pad-preset. The .spc holds exactly 16
 #      encoder records -- 2 banks of 8 (HARDWARE.md 5.2) -- so putting the
 #      sequencer's CCs on the encoders spends one of the two KNOB BANK banks
-#      globally, and both are already accounted for: bank 2 drives the device
-#      macros, bank 1 is deliberately left free for Live's own MIDI mapping.
+#      globally, and both are already accounted for: bank 1 drives macros 1-8
+#      and bank 2 macros 9-16, with the launcher preset spending bank 2's
+#      bottom pair on session navigation instead of the last two macros.
 #
 # The script works without any of this. Only paint velocity and pattern length
 # are unreachable, and both have mouse equivalents in Live.
@@ -241,7 +243,7 @@ USE_STRIKE_VELOCITY = True
                             # moves it
 
 DEFAULT_LANE = 36           # C1, the bottom-left pad of a Live drum rack
-LANE_SELECT_BASE = 36       # SHIFT + pad selects pitches 36-51 in drum-rack
+LANE_SELECT_BASE = 36       # MOD + pad selects pitches 36-51 in drum-rack
                             # orientation: bottom-left is the lowest, ascending
                             # left to right then bottom to top, so it mirrors
                             # what the rack looks like on screen

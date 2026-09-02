@@ -43,15 +43,17 @@ The SMC-PAD enumerates as three independent in/out pairs:
 that order. The manufacturer's material refers to a *generic* port and a
 *Mackie/DAW* port without matching them to those names; port 3 is the DAW one.
 
-All LED work here was done through `MIDIOUT3`. Whether the other two output ports
-also light pads was never tested. Mackie mode was the interesting one to begin
-with precisely because it was the only mode on this device that sends anything
-*back* for lighting.
+All LED work here was done through `MIDIOUT3`. Ports 1 and 2 were later tried and
+**do not light pads** on any note range or channel attempted (2026-08-31) — only
+MCP-typed banks, which are the port-3 ones, respond at all. Mackie mode was the
+interesting one to begin with precisely because it was the only mode on this
+device that sends anything *back* for lighting.
 
-The split matters more than it looks. **The pads are on port 3 and the encoders
-are on ports 1 and 2, and no port carries both.** An Ableton Remote Script gets
-exactly one input port, so a single script physically cannot see the whole
-controller. That is a hardware fact, not a software limitation, and it is why
+The split matters more than it looks. **The pads you can light are on port 3, the
+encoders are on ports 1 and 2, and no port carries both.** (Plain-MIDI pad banks
+do reach ports 1 and 2 — see the correction above — but those cannot be lit, so
+they are no use to a clip grid.) An Ableton Remote Script gets exactly one input
+port, so a single script physically cannot see the whole controller. That is why
 this repo ships two scripts.
 
 Two further measured details:
@@ -282,16 +284,22 @@ still on it.
 
 **Current — measured 2026-08-31. Every encoder is relative.**
 
-| Encoder | Bank 1 CC | Bank 2 CC |
-|---|---|---|
-| 1 | 7 | 38 |
-| 2 | 8 | 39 |
-| 3 | 5 | 40 |
-| 4 | 6 | 41 |
-| 5 | 3 | 42 |
-| 6 | 4 | 43 |
-| 7 | 1 | 44 |
-| 8 | 2 | 45 |
+| Encoder | Bank 1 CC | Bank 2 CC (launcher) | Bank 2 CC (sequencer) |
+|---|---|---|---|
+| 1 | 7 | 17 | 15 |
+| 2 | 8 | 18 | 16 |
+| 3 | 5 | 13 | 13 |
+| 4 | 6 | 14 | 14 |
+| 5 | 3 | 11 | 11 |
+| 6 | 4 | 12 | 12 |
+| 7 | 1 | 9 | 9 |
+| 8 | 2 | 10 | 10 |
+
+Bank 2's bottom pair is the only thing that differs between the two presets: the
+launcher spends it on session navigation (CC 17/18), the sequencer on macros 15
+and 16. Every CC above is confirmed against `reference/*.spc`, whose sixteen
+encoder records carry the CC in byte 4 and `63 65` in bytes 5–6 — the relative
+centre-64 encoding, on all sixteen.
 
 **None of this is a property of the hardware.** The same unit measured 2026-08-03
 read bank 1 as CC 1–8 ascending and bank 2 as CC 44, 45, 42, 43, 40, 41, 38, 39 —
@@ -301,15 +309,15 @@ two readings. Treat the table above as *this unit, on that date*.
 
 ### 4.2 One bank's CC numbers will not follow the printed encoder numbers
 
-In both measurements exactly one bank ran ascending with the printed labels while
-the other descended in pairs — encoder 1 taking the higher CC of a pair, encoder 8
-the lowest overall. **Which bank misbehaves swapped between the two readings.**
-
-As of the current measurement it is bank 1:
+In the 2026-08-03 measurement exactly one bank ran ascending with the printed
+labels while the other descended in pairs. After the renumbering, **both** banks
+descend in pairs — encoder 1 takes the higher CC of a pair and encoder 8 the
+lowest overall:
 
 ```
-bank 1, encoders 1..8  ->  CC 7, 8, 5, 6, 3, 4, 1, 2
-bank 2, encoders 1..8  ->  CC 38, 39, 40, 41, 42, 43, 44, 45
+bank 1, encoders 1..8  ->  CC  7,  8,  5,  6,  3,  4,  1,  2
+bank 2, encoders 1..8  ->  CC 17, 18, 13, 14, 11, 12,  9, 10   (launcher preset)
+bank 2, encoders 1..8  ->  CC 15, 16, 13, 14, 11, 12,  9, 10   (sequencer preset)
 ```
 
 The consequence is the same whichever bank it lands on: wire a row of controls in
@@ -432,12 +440,15 @@ pattern established.
 [flag] [type=02] [00] [cc] [min] [max]
 ```
 
-Sixteen records for eight physical encoders — two banks of eight. The CC bytes
-read `7, 8, 5, 6, 3, 4, 1, 2` then `38–45`.
+Sixteen records for eight physical encoders — two banks of eight. In
+`launchpad.spc` the CC bytes read `7, 8, 5, 6, 3, 4, 1, 2` then
+`17, 18, 13, 14, 11, 12, 9, 10`; `sequencer.spc` differs only in the bottom pair
+of bank 2, `15, 16`.
 
-Note that this is **not** printed-encoder order: the first eight records are bank
-1, whose measured map is encoder *n* → CC *n*. Section 4.1's table, not the file's
-record order, is what the device actually sends.
+The records are in **encoder order**, record *k* being encoder *k*, which is what
+makes them line up with section 4.1's table — and it is what puts bank 2's first
+two records (CC 17/18) on the bottom pair of knobs, exactly where the launcher
+script expects its session navigation.
 
 > **Hypothesis, untested.** If section-2 records are stored in the order
 > (enc 7, enc 8, enc 5, enc 6, enc 3, enc 4, enc 1, enc 2) — the same

@@ -42,8 +42,11 @@ run_probe.bat --list
 
 `run_probe.bat` is self-contained. On first run it creates `venv-midi` next to
 itself, upgrades pip, installs `requirements-midi.txt`, verifies that
-`import mido, rtmidi` works, and writes a `.deps-ok` stamp. Later runs see the
-stamp and go straight to the script. All arguments are passed through unchanged,
+`import mido, rtmidi` works, and saves a copy of the requirements file as
+`venv-midi\.deps-ok`. Later runs compare that copy against the current
+requirements file and reinstall only when it has changed — so bumping a pin
+takes effect on the next run instead of being silently ignored. Delete
+`venv-midi\.deps-ok` to force a reinstall, or `venv-midi\` to start over. All arguments are passed through unchanged,
 so every command below works with `run_probe.bat` substituted for
 `python mvave_probe.py`.
 
@@ -202,16 +205,18 @@ Ctrl+C to stop early.
      3.34s  MIDIIN3 (SMC-PAD) 2    note_on channel=0 note=1 velocity=0 time=0
 
 --- summary: 21 distinct controls ---
-  port                   type           num    count  values seen
-  MIDIIN3 (SMC-PAD) 2    note_on        1           8  0, 127
-  MIDIIN3 (SMC-PAD) 2    note_on        2           4  0, 127
+  port                   type           ch   num    count  values seen
+  MIDIIN3 (SMC-PAD) 2    note_on        1    1           8  0, 127
+  MIDIIN3 (SMC-PAD) 2    note_on        1    2           4  0, 127
+
+MIDI channels seen: 1
 ```
 
 Ctrl+C ends the run early and still prints the summary.
 
 **Reading it:**
 
-- The summary is keyed by (port, message type, note-or-CC number). One row is one
+- The summary is keyed by (port, message type, channel, note-or-CC number). One row is one
   physical control — press each pad a few times and count the rows.
 - `values seen` lists up to 10 distinct values; past that it collapses to
   `... (N distinct, range LO-HI)`.
@@ -263,11 +268,14 @@ channel (`--channel`), or a device that does not accept LED MIDI.
 1. **"All pads lit" is not "the host can set colours."** They may have lit in the
    colour already configured on the device. Distinguishing local colour from host
    colour requires `--colours`.
-2. **A pad that stays dark here may not be dead.** `--light` sends up to 128
-   note-ons back to back with no throttle, which can overrun a small device MIDI
-   buffer. This run reported 15 of 16 pads on a grid where all 16 work; the
-   sixteenth lit fine when addressed alone. Confirm a suspect pad with a
-   single-note test (`--light --lo N --hi N`) before designing around it.
+2. **A pad that stays dark may not be dead — and this is why the sends are
+   paced.** The original `--light` sent up to 128 note-ons back to back with no
+   throttle, overran the device's MIDI input buffer, and reported 15 of 16 pads
+   on a grid where all 16 work; the sixteenth lit fine when addressed alone.
+   Every bulk send now goes through `_paced()`, which leaves `SEND_GAP` (2 ms)
+   between messages — well under a human's notice, and enough for this device.
+   Keep that pacing if you port the send path elsewhere. Confirm a suspect pad
+   with a single-note test (`--light --lo N --hi N`) before designing around it.
 
 ## `--sweep` — which notes address the pads?
 
@@ -547,7 +555,14 @@ Exactly one mode flag is required and they are mutually exclusive:
 | `--velocities` | list | `coarse` | `--colours` | `coarse`, `all`, or a comma-separated list. See the [`--colours`](#--colours--what-does-velocity-mean-on-an-led) table. |
 
 `--clear` ignores `--lo`/`--hi` and always covers 0–127. Input modes (`--listen`,
-`--curves`, `--knobs`) ignore `--channel` — they record whatever channel arrives.
+`--curves`, `--knobs`) ignore `--channel` — they record whatever channel arrives,
+and all three now *report* the channel, since a summary that omits it agrees
+equally well with two mutually exclusive theories.
+
+Numeric flags are range-checked before any port is opened: `--channel` takes
+1–16, `--lo`/`--hi`/`--velocity`/`--note` take 0–127, and `--velocities` rejects
+anything outside 0–127. A bad value is an argparse error, not a traceback from
+inside a run you have already started answering prompts for.
 
 ---
 

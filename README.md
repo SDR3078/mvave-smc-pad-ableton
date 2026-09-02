@@ -23,6 +23,9 @@ anywhere else.
 | Knob bank 2, encoders 3–8 | Macros **9–14** of the same device |
 | Knob bank 2, encoders 1–2 | Move the session box across tracks and through scenes |
 
+On the step-sequencer preset those bottom two encoders carry macros **15–16**
+instead, since a sequencer has no session box to move.
+
 Pad colours: green playing · orange loaded · red-pink recording · blue queued ·
 off empty.
 

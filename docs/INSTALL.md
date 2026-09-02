@@ -35,7 +35,7 @@ sends.
 | 16 pads | notes **1–16**, reading order — top-left is 1, bottom-right is 16 — on the **third** port pair (the DAW port), velocity 127 on press and note-on velocity 0 on release |
 | Buttons | note **17** play, **18** stop, **19** record, **20** left arrow, **21** right arrow |
 | Encoders, knob bank 1 | CC **7, 8, 5, 6, 3, 4, 1, 2** across encoders 1–8 — the CC numbers do not follow the printed encoder numbers on this bank |
-| Encoders, knob bank 2 | CC **38–45** ascending across encoders 1–8 |
+| Encoders, knob bank 2 | CC **17, 18, 13, 14, 11, 12, 9, 10** across encoders 1–8 (the sequencer preset sends 15, 16 for the bottom pair instead) |
 | All sixteen | **relative**, centred on 64: 63 is one step back, 65 one step forward |
 
 This was measured on one unit whose pad bank and transport buttons had been
@@ -184,9 +184,9 @@ Remote on it, but it matters if you ever hand the port back.
 Look for these lines, in this order:
 
 ```
-MVave_SMC_KNOBS: loaded. CC 38/39 navigate; 14 macro CCs 1,2,3,4,5,6,7,8,40,41,42,43,44,45.
+MVave_SMC_KNOBS: loaded. CC 17/18 navigate; 16 macro CCs 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16.
 MVave_SMC_KNOBS: device -> <device name>
-MVave_SMC_KNOBS: first nav CC -- 38 value 65
+MVave_SMC_KNOBS: first nav CC -- 17 value 65
 MVave_SMC_KNOBS: first macro CC -- 1 value 65 -> macro 1
 ```
 
@@ -226,12 +226,14 @@ Lines that mean something went wrong:
 | Button 18 | Stop |
 | Button 19 | Record |
 | Arrow 20 / 21 | Select previous / next track |
-| **Bank 2**, encoders 1–6 | Macros 1–6 of the **selected** device (Live's blue hand) |
-| **Bank 2**, encoder 7 | Move the session box across tracks |
-| **Bank 2**, encoder 8 | Move the session box through scenes |
-| **Bank 1**, encoders 1–8 | Nothing — deliberately unassigned, free for Ctrl+M |
+| **Bank 1**, encoders 1–8 | Macros **1–8** of the **selected** device (Live's blue hand) |
+| **Bank 2**, encoders 3–8 | Macros **9–14** of the same device |
+| **Bank 2**, encoders 1–2 | Move the session box across tracks / through scenes |
 
-The macros follow the selection: click a different track and the same six knobs
+On the sequencer preset, bank 2's bottom pair carries macros **15–16** instead of
+the session box, which the sequencer has no use for.
+
+The macros follow the selection: click a different track and the same knobs
 control that track's device. That is the whole reason for doing it in a script
 rather than with Ctrl+M, which can only ever point at one fixed parameter.
 
@@ -257,8 +259,12 @@ the Shift+Pad combos. There is no spare modifier on this device.
 
 ### Pads work but the macro knobs do nothing
 
-- **The device is on knob bank 1.** Bank 1 is unassigned by design. Press KNOB
-  BANK.
+- **You are on the other knob bank.** KNOB BANK switches all eight encoders at
+  once and the two banks carry different macros; a mapping made on one is inert
+  while the other is selected. Press KNOB BANK and try again.
+- **The device has fewer macros than the knob you turned.** Bank 2's top six are
+  macros 9–14, which an eight-macro rack simply does not have. `Log.txt` names
+  the device and the macro, once.
 - **Slot 2 is empty or on the wrong port.** `MVave_SMC_KNOBS` needs the *first*
   port pair as input. Check for the `MVave_SMC_KNOBS: loaded.` line in `Log.txt`;
   no line means the script never constructed.
@@ -295,11 +301,11 @@ If it is dead on bank 2 as well, its CC may not match the map — verify with
 `run_probe.bat --knobs`, which reports each encoder separately and names silent
 knobs and CC clashes.
 
-### The session box jumps to one end when you turn encoder 7 or 8
+### The session box jumps to one end when you turn bank 2's encoder 1 or 2
 
 That encoder is still **absolute**. It transmits a position, not a step, so the
 first message after the box has moved by any other means slams it to wherever the
-knob's counter happens to be. Switch CC 38 and 39 to relative in the M-Vave
+knob's counter happens to be. Switch CC 17 and 18 to relative in the M-Vave
 editor (63 = one back, 65 = one forward, centred on 64).
 
 ### Ctrl+M mappings stopped working after installing this
@@ -378,10 +384,11 @@ The encoder CCs are constants at the top:
   Macro *N* is `device.parameters[N]`; index 0 is the device on/off switch, so the
   numbering needs no offset. Build it in **encoder order**, not numeric CC order,
   or the macros scatter across the panel.
-- `STEPS_PER_SWEEP = 128.0` — one click moves this fraction of a parameter's
-  range. A rack macro is 0–127, so 128 clicks is exactly one full sweep.
-- `CC_TRACK = 38`, `CC_SCENE = 39`, `CENTRE = 64` — the relative navigation
-  encoders.
+- `STEPS_PER_SWEEP = 127.0` — one click moves this fraction of a parameter's
+  range. A rack macro runs 0–127, a range of 127, so one click is one unit and a
+  full sweep is 127 clicks.
+- `CC_TRACK = 17`, `CC_SCENE = 18`, `CENTRE = 64` — the relative navigation
+  encoders (bank 2's bottom pair, launcher preset).
 
 ### One editing gotcha
 

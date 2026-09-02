@@ -42,7 +42,7 @@ CLIPTRACKVIEW = -1  # Clip/Track view switch
 
 # Modifier
 # --------
-# Currently DISABLED. The CC 38/39 encoders navigate both axes, so no modifier
+# Currently DISABLED. The CC 17/18 encoders navigate both axes, so no modifier
 # is needed and note 19 is free to be the record button.
 #
 # To re-enable it, four constants have to move together:
@@ -52,7 +52,7 @@ CLIPTRACKVIEW = -1  # Clip/Track view switch
 #     SESSIONRIGHT = 21    not the TRACK* ones
 #     TRACKLEFT/TRACKRIGHT = -1  so two components do not share one button
 # Held down, the arrows then bank through scenes instead of across tracks.
-MODIFIER = -1   # disabled: the CC 38/39 encoders navigate instead
+MODIFIER = -1   # disabled: the CC 17/18 encoders navigate instead
 
 # Device Control
 DEVICELOCK = -1  # Device Lock (lock "blue hand")
@@ -76,7 +76,7 @@ SEEKFWD = -1  # Seek forward
 SEEKRWD = -1  # Seek rewind
 
 # Session Navigation (aka "red box")
-SESSIONLEFT = -1  # Session left  -- the CC 38 encoder banks tracks now
+SESSIONLEFT = -1  # Session left  -- the CC 17 encoder banks tracks now
 SESSIONRIGHT = -1  # Session right -- ditto, see MVave_SMC_KNOBS
 SESSIONUP = -1  # Session up
 SESSIONDOWN = -1  # Session down

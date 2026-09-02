@@ -13,7 +13,7 @@ this file is what got built and section 4 says why.
 > **Status: running in Live on real hardware** (2026-08-31). Every value in
 > `MIDI_Map.py` is measured rather than assumed — section 5 has the table and
 > [HARDWARE.md](HARDWARE.md) has the method. The logic is also exercised by
-> `tools/stepseq_selftest.py` (67 checks, no controller and no DAW required),
+> `tools/stepseq_selftest.py` (87 checks, no controller and no DAW required),
 > which is what makes a change safe to attempt without a Live restart.
 >
 > Two things the first real session changed: the visible window now follows the
@@ -147,8 +147,9 @@ pads appear only on port 3 and the encoders only on ports 1 and 2, never both
 Worse, encoder assignments are not per pad-preset — the `.spc` holds exactly 16
 encoder records, two banks of eight ([HARDWARE.md 5.2](HARDWARE.md)) — so
 putting the sequencer's CC 20–23 on the encoders spends one of the two KNOB BANK
-banks globally, and both are already accounted for: bank 2 drives the device
-macros, bank 1 is deliberately left free for Live's own MIDI mapping.
+banks globally, and both are already accounted for: bank 1 drives macros 1–8 and
+bank 2 macros 9–16, with the launcher preset spending bank 2's bottom pair on
+session navigation instead of the last two macros.
 
 The sequencer works without any knob. Only paint velocity and pattern length
 become unreachable, and both have mouse equivalents in Live. If the knobs turn
@@ -161,10 +162,11 @@ addition to the encoder script, not a redesign of this one.
 **There is no spare button to make SHIFT out of.** The device's own SHIFT key
 transmits nothing at all — it is consumed by the firmware for its Shift+Pad
 combinations ([HARDWARE.md 6.1](HARDWARE.md)). The five buttons above the grid
-send notes 17–21 on channel 1, and they live in a different section of the
-`.spc` from the pad banks, so they are very likely global rather than
-per-preset. The brief's "spare button as SHIFT, CC 104 on channel 16" became the
-record button, note 19, channel 1.
+are **per-preset**, and on this preset they send notes **117–121** on channel 1.
+Decoding the two exported presets settles it: the five button records read
+20, 21, 17, 18, 19 in `launchpad.spc` and 120, 121, 117, 118, 119 in
+`sequencer.spc`. The brief's "spare button as SHIFT, CC 104 on channel 16"
+became the record button — note **119**, channel 1.
 
 That in turn is why the script owns the play button. Claiming a port with a
 Control Surface disables Track, Sync and Remote on it
@@ -206,7 +208,7 @@ method are in [HARDWARE.md](HARDWARE.md); this is what the sequencer depends on.
 | What do the pads send? | **Notes 101–116, channel 1, fixed velocity 127.** A purpose-built port-3 bank. |
 | How are the LEDs addressed? | **The same notes the pads send**, on the same channel, out of `MIDIOUT3`. |
 | Can the two scripts share port 3? | **Yes.** Note range is the only separator — the clip launcher is 1–16, this is 101–116. Channel cannot separate them; both are channel 1. |
-| Do the five buttons work in this preset? | **Yes**, notes 17–21 channel 1, same as everywhere else. |
+| Do the five buttons work in this preset? | **Yes** — notes **117–121**, channel 1. They are per-preset, not global: the launcher's bank sends 17–21, this one sends 117–121. |
 | Do pads self-light on press? | **No.** Four rounds, ~78 strikes, no LED movement, and a host-set colour survives being struck. |
 | Does velocity select the LED colour? | **Yes**, an absolute palette index. Everything usable is below 64; 64–112 is one flat blue. |
 | How does a pad turn off? | **Note-on velocity 0.** A real note-off is ignored, silently. |
@@ -260,7 +262,7 @@ M-Vave editor, take a bank you do not use and give it:
 The editor numbers pads **bottom-up** — its PAD1 is the bottom-left pad — so its
 PAD13–16 carry the first four notes. Confirm with
 `run_probe.bat --listen --port "SMC-PAD"` before going further: you want notes
-101–116 on `MIDIIN3`, channel 1, and buttons 17–21 alongside them.
+101–116 on `MIDIIN3`, channel 1, and buttons 117–121 alongside them.
 
 **Then the Control Surface slot:**
 
