@@ -164,19 +164,34 @@ their owners and are used here descriptively.
 one:
 
 - **Hanz Petrov's "Introduction to the Framework Classes"** — the structural
-  skeleton, the 128-element MIDI map and the `Special*` components. The original
-  is not linked here and its terms are not recorded.
+  skeleton, the 128-element MIDI map and the `Special*` components. Published on
+  [remotescripts.blogspot.com](http://remotescripts.blogspot.com/2010/03/introduction-to-framework-classes.html)
+  from 12 March 2010, in four parts, with the example scripts on its
+  [Support Files](http://remotescripts.blogspot.com/p/support-files.html) page.
+  **Checked 2026-09-05: neither page states any licence, copyright notice or
+  terms of use.** The material is presented as educational, with no permission
+  granted or withheld in writing.
 - **Ableton's own shipped scripts.** `SpecialViewControllerComponent.py:5` carries
   `# Partial --== Decompile ==-- with fixes`, which asserts on its face that the
-  file was recovered from compiled bytecode rather than typed from a tutorial —
-  a different upstream from the other two.
+  file was recovered from compiled bytecode rather than typed from a tutorial.
+  The likely route is the template itself: Petrov's Support Files page also
+  distributes **decompiled Live 8.2.2 `_Framework`, APC40 and APC20 scripts**, so
+  this appears to arrive with the lineage rather than having been decompiled
+  here. That identifies the path, not the permission.
 - **An "OpenLabs" module.** `SpecialTransportComponent.py` credits it in seven
-  places for the undo/redo block. What OpenLabs is, which file the code came
-  from, and under what terms are all unrecorded. The block is currently unwired
-  (`UNDO = -1`, `REDO = -1`), so removing it would cost nothing.
+  places for the undo/redo block. Searched 2026-09-05 without finding a
+  an identifiable OpenLabs release: `SpecialTransportComponent.py` is described in
+  the community as a re-usable module that circulated with APC40 scripts, which
+  Petrov's blog also distributes, so it plausibly arrived by the same route —
+  but that is inference, and the origin remains unestablished. The block is
+  unwired (`UNDO = -1`, `REDO = -1`), so removing it would cost nothing and
+  would close this question outright.
 
-There is no LICENSE, COPYING or NOTICE file in this repository and no upstream is
-linked, so "inherited" currently points at nothing a reader — or the author — can
-check. Three things have to be decided before this is shared widely: whether the
-decompiled file can ship, whether the OpenLabs block stays, and where Petrov's
-original is and what it says about reuse.
+There is no LICENSE, COPYING or NOTICE file in this repository. The upstream that
+*can* be identified states no terms of its own, so what is inherited is an
+absence rather than a permission — which is worth knowing before choosing a
+licence for the parts that are original.
+
+Two decisions remain: whether `SpecialViewControllerComponent.py`, marked a
+partial decompile, can ship at all; and whether the unwired OpenLabs undo/redo
+block stays or goes. Removing the block is free and settles one of them.

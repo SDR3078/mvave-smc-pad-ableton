@@ -103,7 +103,13 @@ in `tools/stepseq_selftest.py`.
 ## Origin and attribution
 
 `MVave_SMC_PAD/` is a derivative of **Hanz Petrov's "Introduction to the
-Framework Classes"** template — the long-standing tutorial skeleton for custom
+Framework Classes"** template — published on
+[remotescripts.blogspot.com](http://remotescripts.blogspot.com/2010/03/introduction-to-framework-classes.html)
+in four parts from March 2010, still online as of 2026-09-05, and carrying no
+licence statement on either the articles or the Support Files page that hosts
+the example scripts. That page also distributes decompiled Live 8.2.2
+`_Framework`, APC40 and APC20 scripts, which is the likely origin of the
+`Partial --== Decompile ==--` marker in `SpecialViewControllerComponent.py` — the long-standing tutorial skeleton for custom
 Live Remote Scripts, structured as an APC40/APC20 emulation with a flat
 `MIDI_Map.py` of note and CC constants. Its fingerprints are all over the code:
 the class docstring still says *"Script for M-Vave SMC-PAD in APC emulation
