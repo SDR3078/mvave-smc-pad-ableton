@@ -29,7 +29,15 @@ class SpecialChannelStripComponent(ChannelStripComponent):
     def _on_timer(self):
         if (self.is_enabled() and (self._track != None)):
             if (self._toggle_fold_ticks_delay > -1):
-                assert self._track.is_foldable
+                # Self-healing rather than asserting. _toggle_fold_ticks_delay is
+                # only written by _select_value, but self._track is reassigned
+                # behind this class's back whenever the mixer re-banks or the
+                # track list changes -- so the track under a pending fold can
+                # stop being foldable, and an AssertionError from a timer
+                # callback takes the whole control surface down.
+                if not self._track.is_foldable:
+                    self._toggle_fold_ticks_delay = -1
+                    return
                 if (self._toggle_fold_ticks_delay == 0):
                     self._track.fold_state = (not self._track.fold_state)
                 self._toggle_fold_ticks_delay -= 1

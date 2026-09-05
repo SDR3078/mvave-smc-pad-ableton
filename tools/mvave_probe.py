@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-mvave_probe.py -- run this ON THE WINDOWS PC (the one the SMC-PAD is plugged into).
+mvave_probe.py -- run this on the machine the SMC-PAD is plugged into.
 
 Answers the two questions that gate the whole Remote Script project, without
 installing a Remote Script first:
@@ -10,10 +10,11 @@ installing a Remote Script first:
 
 Nothing here touches Ableton. It talks straight to the SMC-PAD's MIDI ports.
 
-IMPORTANT -- Windows MIDI ports are exclusive.
+ON WINDOWS -- MIDI ports are exclusive.
 If Ableton has a port open, this script cannot open it and you will get an
 "access denied" style error. Either close Live, or untick that port in
-Preferences > Link/Tempo/MIDI before running.
+Preferences > Link/Tempo/MIDI before running. On Linux (ALSA) and macOS
+(CoreMIDI) ports are multi-client, so you can probe alongside a running DAW.
 
 Teardown: delete this file, run_probe.bat, requirements-midi.txt and the
 venv-midi folder next to them. Nothing is written anywhere else.
@@ -114,8 +115,11 @@ def cmd_listen(args):
         except (IOError, OSError) as exc:
             print("  ! could not open %s -- in use by Live? (%s)" % (n, exc))
     if not ports:
-        sys.exit("Could not open any port. Close Live, or untick the SMC-PAD in "
-                 "Preferences > Link/Tempo/MIDI.")
+        sys.exit("Could not open any port -- busy or unavailable.\n"
+                 "On Windows, ports are exclusive: close Live, or untick the "
+                 "SMC-PAD in Preferences > Link/Tempo/MIDI.\n"
+                 "On Linux/macOS, ports are multi-client, so a busy port means "
+                 "the device is unplugged or the name is wrong -- try --list.")
     try:
         while time.time() - started < args.seconds:
             for port in ports:

@@ -36,7 +36,7 @@ if defined NEEDS_DEPS (
     "%PY%" -m pip install -r "%~dp0requirements-midi.txt"
     if errorlevel 1 goto :pipfail
     "%PY%" -c "import mido, rtmidi"
-    if errorlevel 1 goto :pipfail
+    if errorlevel 1 goto :importfail
     copy /y "%~dp0requirements-midi.txt" "%STAMP%" >nul
     echo.
 )
@@ -64,6 +64,16 @@ exit /b 1
 
 :pipfail
 echo.
-echo Dependency install failed - check your internet connection and try again.
+echo Could not DOWNLOAD the dependencies. Check your internet connection, or
+echo whether a wheel exists for this Python version and architecture:
+"%PY%" --version
+pause
+exit /b 1
+
+:importfail
+echo.
+echo The dependencies installed but could not be IMPORTED. This is a runtime
+echo problem, not a download one - python-rtmidi needs a working MIDI backend.
+"%PY%" --version
 pause
 exit /b 1

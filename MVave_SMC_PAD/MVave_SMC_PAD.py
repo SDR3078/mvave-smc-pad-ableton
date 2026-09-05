@@ -1,5 +1,7 @@
 from __future__ import with_statement
 
+import traceback
+
 import Live
 from _Framework.ControlSurface import ControlSurface
 from _Framework.InputControlElement import *
@@ -243,6 +245,19 @@ class MVave_SMC_PAD(ControlSurface):
         # transport.set_song_position_control(self._ctrl_map[SONGPOSITION]) #still not implemented as of Live 8.1.6
 
     def _on_selected_track_changed(self):
+        # Guarded like the sibling scripts'. Live calls this on every track
+        # click and all three surfaces are loaded at once, so an exception here
+        # -- a device deleted between the click and the read, say -- would take
+        # the clip launcher down for the rest of the session with nothing in the
+        # UI to say so. MVave_SMC_KNOBS wraps the identical body for the same
+        # reason; this file was the only one of the three left unwrapped.
+        try:
+            self._follow_selected_track()
+        except Exception:
+            self.log_message('MVave_SMC_PAD: exception in selected track changed\n%s'
+                             % traceback.format_exc())
+
+    def _follow_selected_track(self):
         ControlSurface._on_selected_track_changed(self)
         track = self.song().view.selected_track
         device_to_select = track.view.selected_device

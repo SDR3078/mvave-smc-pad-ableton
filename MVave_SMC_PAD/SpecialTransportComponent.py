@@ -75,6 +75,12 @@ class SpecialTransportComponent(TransportComponent):
             if self._quant_toggle_button != None:
                 self._quant_toggle_button.add_value_listener(self._quant_toggle_value)
 
+            # _on_quantisation_changed, not update(): _quant_toggle_button is
+            # this subclass's own, so no update() in the base chain can light
+            # it, and the override that would have is commented out below. It
+            # otherwise boots dark while Live's quantisation defaults to on, so
+            # the first press reads as "turn on" and actually turns it off.
+            self._on_quantisation_changed()
             self.update()
         return None
 

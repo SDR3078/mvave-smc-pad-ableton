@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 
 # The probe builds its own virtualenv on first run
+venv-midi/
 tools/venv-midi/
 tools/venv/
 

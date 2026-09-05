@@ -44,6 +44,27 @@ from _Framework.DeviceComponent import DeviceComponent
 CHANNEL = 0                                     # MIDI channel 1
 CENTRE = 64
 
+# How a relative encoder encodes one click. The same hardware fact lives in
+# MVave_SMC_STEPSEQ/MIDI_Map.py as KNOB_MODE, and the two must agree -- a test
+# in tools/stepseq_selftest.py asserts they do. It is duplicated rather than
+# imported because the sequencer package is optional; a rig with only the
+# launcher and the encoders must not depend on it being installed.
+#
+#   'centre'  63 = one step back, 64 = nothing, 65 = one step forward.
+#   'twos'    127 = one step back, 1 = one step forward.
+#
+# The two are mutually ambiguous -- 63 is -1 under 'centre' and +63 under
+# 'twos' -- so this is a setting, not something that can be detected. Feeding
+# the wrong one to the session box moves it 63 tracks per click, silently.
+ENCODER_MODE = 'centre'
+
+
+def decode_relative(value, mode=None):
+    """One encoder click -> a signed number of steps."""
+    if (mode or ENCODER_MODE) == 'twos':
+        return value if value < 64 else value - 128
+    return value - CENTRE
+
 # Navigation -- bank 2, knobs 1 and 2 (the BOTTOM pair; the device numbers its
 # encoders bottom-up, so encoder 1 is bottom-left and encoder 7 is top-left).
 CC_TRACK = 17                                   # box across tracks
@@ -275,7 +296,7 @@ class MVave_SMC_KNOBS(ControlSurface):
             # hundreds of messages and Log.txt is not the place for them.
             self._first_nav_logged = True
             self.log_message('MVave_SMC_KNOBS: first nav CC -- %d value %d' % (cc, value))
-        delta = value - CENTRE
+        delta = decode_relative(value)
         if delta == 0:
             return
         if cc == CC_TRACK:
@@ -288,7 +309,7 @@ class MVave_SMC_KNOBS(ControlSurface):
             self._first_macro_logged = True
             self.log_message('MVave_SMC_KNOBS: first macro CC -- %d value %d -> macro %d'
                              % (cc, value, MACRO_BY_CC[cc]))
-        delta = value - CENTRE
+        delta = decode_relative(value)
         if delta:
             self._adjust_macro(MACRO_BY_CC[cc], delta)
 
