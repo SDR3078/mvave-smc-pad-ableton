@@ -239,7 +239,7 @@ Still genuinely unknown, and neither blocks anything:
 
 | Question | Status |
 |---|---|
-| What does PAD BANK do in this preset? | Untested. If it silently switches to a second note set, fill in `PAD_NOTES_B` so stray presses stay harmless rather than going dead. |
+| What does PAD BANK do in this preset? | **Narrowed.** The other seven banks are factory and byte-identical in both shipped presets; bank 7 carries notes **100–115**, which overlaps `PAD_NOTES` by 15 of 16 — so if those notes reached port 3, every pad would write a step one place off, silently. Bank 7's flag byte is `0x00`, which under 5.6's model routes it to ports 1/2 instead, so this rides on the unrun 5.6 experiment. |
 | Which velocities are actually teal and amber? | 20 and 15, named by eye by one observer. Swap them for whatever reads best on your unit. |
 
 The measurement tool is here if you need to redo any of it:
@@ -259,7 +259,13 @@ grid forever.
 
 **First, build the preset.** The sequencer needs its own port-3 pad bank, because
 the note range is the only thing that separates it from the clip launcher. In the
-M-Vave editor, take a bank you do not use and give it:
+M-Vave editor, make a **second preset** — a Shift+Pad slot, not a spare PAD BANK
+inside your existing one. The five buttons are one set per preset file (the
+`.spc` holds 5 button records against 128 pad records in 8 banks), so switching
+PAD BANK renumbers the pads and leaves the buttons on 17–21: the pads would work
+while MOD, the view toggle and both arrows stayed dead and drove the launcher's
+transport instead. `reference/sequencer.spc` **is** that preset, if your editor
+can load one. Give it:
 
 - the same **port-3 setting** the clip-launcher bank has — in the `.spc` this is
   the flag byte `0x04`; the editor presents it as a mode or routing option
@@ -282,14 +288,18 @@ Both scripts sit on the same port and coexist because their note ranges do not
 overlap: 1–16 for the clip launcher, 101–116 here. Switching the pad preset on
 the device switches which one you are driving, with nothing to change in Live.
 
-**One consequence to expect.** Both scripts render LEDs on Live-side events —
-clip changes, playhead, track selection — regardless of which preset is active,
-so with both loaded they will draw over each other. The fix is available and not
-yet built: each script can watch for the other's note range and stand down from
-drawing when it sees it, which turns the preset switch into a real mode switch.
-Until then, load one at a time if the flicker bothers you.
+**Both scripts can stay loaded.** They render LEDs on Live-side events whichever
+preset is active, but they write to disjoint note ranges — 1–21 and 101–121 —
+and lighting a note the active preset does not use does nothing (measured; see
+`LED_NOTES` in `MIDI_Map.py`). Neither can overwrite the other's pads, so the
+preset switch really is the mode switch, with nothing to change in Live. The one
+resource they share is the device's MIDI input buffer, and neither sends in
+bulk.
 
-On the port's MIDI Ports row set **Track = Off**. Notes 101–116 are real pitches
+On the port's MIDI Ports row set **Track = Off** if Live still lets you — a
+Control Surface disables Track/Sync/Remote on the port it claims (INSTALL.md §4,
+HARDWARE.md 1.4), so the switch may already be greyed out, in which case there is
+nothing to do and nothing is wrong. Notes 101–116 are real pitches
 near the top of the keyboard, and with Track on and a track armed, every step you
 toggle also plays a note through that instrument.
 
@@ -353,9 +363,14 @@ Three ways out, cheapest first:
    you can edit. Still uniform, but not full scale, and it is one line.
 2. **Draw the dynamics in Live afterwards** — which is what you would do for
    ghost notes regardless.
-3. **Spend two macros.** Reassign two encoders on the sequencer preset to
-   `CC_LANE` and `CC_VELOCITY` and both become live controls. The handlers are
-   already written; only the device assignment is missing.
+3. **Spend two macros — four steps, not one.** The device assignment alone is
+   not enough, because the encoders come out on ports 1/2 and this script owns
+   port 3. All four are needed: set `USE_STRIKE_VELOCITY = False` (otherwise the
+   fixed strike 127 wins and `CC_VELOCITY` cannot change a single written note);
+   assign CC 20/21 on the sequencer preset; add them to the forwarded set in
+   `MVave_SMC_KNOBS.build_midi_map`; and have that script's `receive_midi` call
+   `handle_encoder_cc(cc, value)` with the **raw** byte, before it subtracts
+   `CENTRE`.
 
 This matters more than a missing convenience. Flat velocity is exactly what made
 an earlier track in this project measure as dynamically dead, and velocity is the

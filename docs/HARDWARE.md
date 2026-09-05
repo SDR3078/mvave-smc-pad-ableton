@@ -171,6 +171,12 @@ modifier on the pad's configured colour: a pad configured pure green
 (`#00ff00`) in the `.spc` still displays pink, blue and orange when driven with
 the right velocities. **The palette is absolute.**
 
+> The green pad was in `reference/Ableton.spc`, replaced by commit `32d8012`.
+> The two presets shipped today configure bank 3 **magenta** (`#f000f0`), so this
+> observation cannot be re-run against `reference/` as it stands — see 5.2. The
+> conclusion is unaffected: the point is that the *configured* colour, whatever
+> it is, does not survive a host-driven note-on.
+
 The hue cycles roughly every 13–14 steps, with the wash/pastel-ness varying
 between cycles.
 
@@ -383,8 +389,12 @@ depending on a `MapMode` constant whose name varies by host version.
 > and 8 pad banks of 16 pads; **PAD BANK** moves within those 8, **Shift+Pad**
 > loads a different file.
 >
-> Both files agree with the constants the scripts use, so they double as a
-> regression fixture.
+> Both files agree with every **note** constant the scripts use — `CLIPNOTEMAP`
+> 1–16, `PLAY`/`STOP`/`REC` 17–19, `TRACKLEFT`/`RIGHT` 20–21, `PAD_NOTES`
+> 101–116 and `BTN_*` 117–121 — so they double as a regression fixture for those.
+> The sequencer's `CC_LANE`–`CC_SPARE` (20–23, channel 16) are deliberately
+> unbacked: they describe controls the presets do not assign, and a 6-byte
+> encoder record has no channel field at all.
 >
 > **On reading `git`'s rename detection.** Git paired the older single dump with
 > `launchpad.spc` and reported it as a rename — but rename detection matches on
@@ -472,10 +482,22 @@ of bank 2, `15, 16`.
 **Section 3 — pads, `@211`, 128 x 26 B**
 
 ```
-[flag] [type] [note] [chan] [vel] [r] [g] [b] [tail] [zeros...]
+[flag] [type] [note] [chan?] [vel] [r] [g] [b] [tail] [zeros...]
 ```
 
-128 records = **8 banks x 16 pads**, one bank per Shift+Pad preset. Measured note
+Two field notes, both checked across all 256 shipped pad records:
+
+- **`tail` mirrors `note` on every record whose `flag` is `0x04`, and is
+  `0xff` on every other** — 128/128 in both files. That is the cheapest
+  integrity check the format offers: it catches a note edited in one place
+  and not the other. The button records (section 1 above) do *not* follow
+  this rule, which is why the `tail` sentence there says no pattern.
+- **`chan?` is a Hypothesis, not an observation.** Byte 3 is `0x00` in all
+  256 records, so these files cannot distinguish "channel, 0-based" from
+  "unused padding"; the name comes from section 2.1's measured channel 1.
+
+128 records = **8 banks x 16 pads**, one bank per PAD BANK position — Shift+Pad
+loads a different *file*, as the note at the head of this section says. Measured note
 ranges per bank:
 
 | Bank | Notes |
@@ -489,8 +511,18 @@ ranges per bank:
 | 7 | 100–115 |
 | 8 | 52–67 |
 
-Bank 3 is the hand-edited one in this project's dump — `#00ff00` for every pad
-and notes 1–16 — and it is the bank port 3 plays back.
+Bank 3 is the hand-edited one and the bank port 3 plays back. In the two shipped
+presets its pads are configured **`#f000f0` magenta** (bytes 5–7 = `f0 00 f0` on
+all 16 records of both files), with notes 1–16 in `launchpad.spc` and 101–116 in
+`sequencer.spc`.
+
+> **Historical note.** Section 3.1's argument uses a pad configured `#00ff00`
+> pure green that still displayed pink. That observation was made on
+> `reference/Ableton.spc`, the single dump this repo carried before commit
+> `32d8012` replaced it with the two presets above. No shipped file reproduces
+> it — checking 3.1 against `reference/` today finds the pad configured magenta.
+> The editor's own palette maxes at `0xf0` (bank 5 green is `00 f0 00`), so
+> `#00ff00` was a hand-typed value.
 
 ### 5.3 The device numbers its pads bottom-up
 
@@ -510,11 +542,16 @@ nothing to it (section 6.2).
 
 ### 5.5 Two traps in reading this format
 
-**A `0x00` in the `type` byte does not mean "pad disabled."** Two bank-3 records
-have `0x00` there where the rest have `0x09`. That was read as "these two pads
-transmit nothing" and it produced a confident, wrong prediction that notes 1 and
-6 would be silent. Both fire normally. Whatever that byte means, it is not an
+**A `0x00` in the `type` byte does not mean "pad disabled."** In the pre-`32d8012`
+`reference/Ableton.spc`, two bank-3 records carried `0x00` there where the rest
+had `0x09` (0-based offsets 1278 and 1356 — PAD10 → note 6 and PAD13 → note 1).
+That was read as "these two pads transmit nothing" and produced a confident,
+wrong prediction. Both fired normally. Whatever the byte means, it is not an
 enable flag — do not infer silence from it.
+
+**In the two shipped presets the field has no variance at all: `0x09` on all 128
+records of both files.** So the trap is real but no longer inspectable here; it
+survives only in git history at the offsets above.
 
 **The `.spc` and a Remote Script must be reasoned about as a pair.** An apparent
 collision between the script's `PLAY=17 STOP=18 REC=19` and the pad note range

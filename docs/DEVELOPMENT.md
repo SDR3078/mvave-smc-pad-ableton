@@ -124,13 +124,13 @@ handlers.
 | `MIDI_Map.py` as a flat constants file, `-1` meaning unassigned | Template (values replaced) |
 | `_on_selected_track_changed()` device-follow | Template |
 | `_load_pad_translations()` / `set_pad_translations()` | Template |
-| All five `Special*Component.py` files | Template (in turn partly decompiled from Ableton's own scripts, and partly borrowed from the OpenLabs scripts) |
+| All six `Special*Component.py` files — channel strip, mixer, session, transport, view controller, zooming | Template (in turn partly decompiled from Ableton's own scripts, and partly borrowed from the OpenLabs scripts). `SpecialZoomingComponent.py` additionally carries this project's clamp fixes (commit `204acbe`) |
 | `TSB_X` / `TSB_Y` session-box size constants | Unclear — see below |
 | `_apply_clip_colours()` and the `CLIP_*` palette constants | **This project** |
 | `_setup_modifier()` / `_modifier_value()` / `_set_session_banking()` and `MODIFIER` | **This project** |
 | `self._missing_clip_setters` version-tolerance logging | **This project** |
 | Every value in `MIDI_Map.py` (note map, 4×4 grid, palette indices, transport notes) | **This project** |
-| `MVave_SMC_KNOBS/` in its entirety | **This project** |
+| `MVave_SMC_KNOBS/` — except `__init__.py`, which is the template's boilerplate with the names changed, footer included | **This project** |
 | `MVave_SMC_STEPSEQ/` in its entirety — see [STEPSEQ.md](STEPSEQ.md) | **This project** |
 
 **The copy in this repo passed through at least one hand between Petrov's
@@ -273,7 +273,7 @@ Two limitations of the current implementation, both visible in the code:
 | `SpecialChannelStripComponent.py` | Channel strip whose select button also folds/unfolds group tracks, after a 5-tick timer delay. |
 | `SpecialTransportComponent.py` | Transport + record-quantisation toggle, undo/redo, a relative tempo encoder, and a `_tempo_value` override that reads `TEMPO_TOP`/`TEMPO_BOTTOM` from `MIDI_Map.py`. |
 | `SpecialViewControllerComponent.py` | `DetailViewControllerComponent` — toggles Detail view, switches Clip/Device chain, scrolls the device chain. |
-| `SpecialZoomingComponent.py` | `SessionZoomingComponent` with page-wise (not step-wise) scrolling: `_scroll_*` snap the box to width/height boundaries. |
+| `SpecialZoomingComponent.py` | `SessionZoomingComponent` with page-wise (not step-wise) scrolling: `_scroll_*` snap the box to width/height boundaries. **Inert as shipped** — `ZOOMUP/DOWN/LEFT/RIGHT` are all `-1`, so `set_nav_buttons` receives four `None`s and nothing can call them. |
 
 **`MVave_SMC_PAD.__init__`** runs everything inside `with self.component_guard():`
 — the framework's context manager for building components — in this order:
@@ -414,7 +414,7 @@ with no branching anywhere**. Every `-1` in that file flows through to a setter
 being handed `None`, which the framework's setters accept as "no button".
 
 That is why `MIDI_Map.py` can be almost entirely `-1` and the script still starts.
-It is also why a typo of `-2` instead of `-1` silently binds note 126.
+It is also why a typo of `-2` instead of `-1` silently binds note 127 — the list is 129 long, so `[-1]` is the `None`, `[-2]` is `Note_127`, and the mistake double-binds a note that is already in use.
 
 Two details:
 
@@ -516,7 +516,7 @@ track's device. That is the entire justification for the knob script existing.
 ### It only gets a device when the selected track changes
 
 ```python
-def _on_selected_track_changed(self):
+def _follow_selected_track(self):                 # wrapped by the guard above
     ControlSurface._on_selected_track_changed(self)
     track = self.song().view.selected_track
     device_to_select = track.view.selected_device
@@ -527,7 +527,10 @@ def _on_selected_track_changed(self):
     self._device_component.set_device(device_to_select)
 ```
 
-This override — lifted from the pad template, which is known to work against this
+All three scripts now call this body from inside a `try`, with the superclass
+call separately guarded, so a framework failure cannot cancel the rebinding
+below it. The shape above — lifted from the pad template, which is known to work
+against this
 vintage of `_Framework` — is the *only* place `set_device()` is called. There is
 no equivalent hook on load and none on "selected device changed within the same
 track". So:
@@ -783,12 +786,19 @@ everything arrives on one port, write one script and skip the cross-script
 machinery entirely. If you do split, remember that only one script may own the
 highlighted session box.
 
-**3. Start from `MIDI_Map.py`, not from the code.** Set everything you do not have
+**3. Start from the constants, in all three places.** `MVave_SMC_PAD/MIDI_Map.py`
+and `MVave_SMC_STEPSEQ/MIDI_Map.py` are files; the encoder script's live at the
+top of `MVave_SMC_KNOBS.py` (`CC_TRACK`, `CC_SCENE`, `MACRO_BY_CC`, `CENTRE`,
+`ENCODER_MODE`, `STEPS_PER_SWEEP`) because there are only a handful. Set
+everything you do not have
 to `-1` and fill in what you do. The 128-element map means unassigned controls cost
 nothing but a constructed object. Resize the grid via `TSB_X`/`TSB_Y` and
 `CLIPNOTEMAP`.
 
-**4. Deal with LEDs on their own terms.** The mechanism here — framework value ⇒
+**4. Deal with LEDs on their own terms.** Note that there are two write paths,
+not one: the launcher goes through the element layer (`send_value` on a
+`ButtonElement`), while the sequencer builds its own status bytes in `_send_led`
+and `_paint_buttons` and bypasses it entirely. The mechanism here — framework value ⇒
 note-on velocity ⇒ palette index — is specific to controllers that light from
 note-on. Devices that want SysEx, or a note-off to extinguish, need different
 handling in the element layer. This one ignores `0x80` note-offs entirely and
@@ -891,8 +901,12 @@ diagnostics quoted are the exact strings to grep for if a future Live disagrees.
   leaves step 5 alone. Had the window been closed, pad 4 would have deleted its
   neighbour instead — the one assumption in `tools/stepseq_selftest.py`'s fakes
   that the "a lit step is a step pressing clears" guarantee rests on.
-- **No guarded callback has ever raised.** `exception in` appears nowhere, and
-  the sequencer has never logged an `unmapped:` message.
+- **No guarded callback has ever raised.** `exception in` appears nowhere in any
+  session. (The sequencer has also never logged an `unmapped:` message, but that
+  proves nothing about the device: `build_midi_map` forwards exactly the sets
+  `_dispatch` claims, so under Live's forward-only routing the latch has nothing
+  it *can* report. Use `tools/mvave_probe.py --listen` for "what is this thing
+  actually sending".)
 
 ### Not verified
 

@@ -15,7 +15,7 @@ move the red box, so **both must be installed and both slots filled**.
 
 | | |
 |---|---|
-| Ableton Live | Any version that ships the classic `_Framework` MIDI Remote Scripts API. Developed and tested against Live 12. |
+| Ableton Live | Any version that ships the classic `_Framework` MIDI Remote Scripts API. **Verified on Live 11.3.43 (Windows)** — see DEVELOPMENT.md §"Verified on hardware". Live 12 is expected to work but is unverified. The step sequencer additionally needs Live 11+ for `get_notes_extended`. |
 | Hardware | M-Vave SMC-PAD, connected by USB. |
 | OS | Windows or macOS. **Everything here was built and tested on Windows only.** The macOS paths below are Live's standard locations, but they have not been verified with these scripts. |
 | Python | None needed. Live runs the scripts with its own interpreter. (The optional probe tool in `tools/` needs Python — see [Finding out what your unit sends](#finding-out-what-your-unit-sends).) |
@@ -48,12 +48,26 @@ On the measured unit, the eight Shift+Pad presets transmitted note ranges
 1) 4–19, 2) 20–35, 3) 1–16 (the hand-edited one), 4) 52–67, 5) 68–83, 6) 84–99,
 7) 100–115, 8) 52–67.
 
+**The two presets in `reference/` are this state, exported.** `launchpad.spc` is
+the clip-launcher preset and `sequencer.spc` the step-sequencer one; if your
+M-Vave editor can load a `.spc`, that is the shortest route. If it cannot, they
+are still worth decoding as the authoritative answer to what the numbers should
+be — `docs/HARDWARE.md` §5 has the format. Configuring by hand, note the one
+gotcha that makes it silently wrong: **the editor numbers pads bottom-up**, so
+its PAD1 is the bottom-left pad and PAD13–16 carry the first four notes
+(HARDWARE.md 5.3). The five buttons are one set per preset, not per pad bank
+(HARDWARE.md 2.4).
+
 So before you start, either configure the device in the M-Vave editor to match
 the table, or change the numbers in `MIDI_Map.py` to match your device — see
-[Customising](#customising). The two navigation encoders must be relative
-whichever way you go; an absolute encoder sends a position, and the session box
-is an index the arrows and the mouse also move, so an absolute counter desyncs
-and the box teleports the next time you touch the knob.
+[Customising](#customising). **All sixteen encoders must be relative**
+whichever way you go — the macro knobs are decoded as deltas too
+(`decode_relative` in `MVave_SMC_KNOBS.py`), so an absolute macro encoder applies
+its position as an increment and slams the macro to a limit on the first turn.
+For the two navigation encoders the reason is sharper still: an absolute encoder
+sends a position, and the session box is an index the arrows and the mouse also
+move, so an absolute counter desyncs and the box teleports the next time you
+touch the knob.
 
 #### Finding out what your unit sends
 
@@ -133,7 +147,12 @@ order does not matter; the numbering below is just for reference.
   ports by function instead — the pads appear on the **third** port pair, and the
   encoders appear **identically on the first two pairs** and never on the third.
 
-> **The step sequencer is a third, optional slot.** `MVave_SMC_STEPSEQ` turns a second
+> **The step sequencer is a third, optional slot** on `MIDIIN3`/`MIDIOUT3` — the
+> same ports as slot 1, deliberately. The note ranges (1–21 against 101–121) are
+> what keep the two apart, so both can stay loaded and the pad preset switch is
+> the mode switch. Setup is in [STEPSEQ.md](STEPSEQ.md) §6.
+>
+> **(superseded note kept for context)** `MVave_SMC_STEPSEQ` turns a second
 > pad preset into a Push-style step sequencer. Which port it wants depends on a
 > measurement nobody has made yet, and there are two possible shapes —
 > [STEPSEQ.md](STEPSEQ.md) section 6 has both. Skip it entirely if you only want
@@ -152,7 +171,14 @@ script claims port 1 and port 2 stays open for Live's own MIDI mapping. Skip
 this and Ctrl+M mapping from the encoders stops working entirely.
 
 If you already had Ctrl+M mappings arriving on port 1, assigning the knob script
-to that port kills them silently. Remake them on port 2.
+to that port kills them silently. Remake them on whichever of the two the
+script is **not** using.
+
+> **Check which port the script actually holds.** Ports 1 and 2 carry
+> identical CCs, so either works for the script and the other is left for
+> Ctrl+M — but the docs and your Live preferences can drift apart. The
+> `Midi Remote Scripts` block at the top of `Log.txt` names the input each
+> slot is on; use that, not this table, when remaking mappings.
 
 ### 5. Both knob banks are in use
 
@@ -287,15 +313,19 @@ while the script is running, but the LEDs simply hold their last value if the
 script goes away: Live closed while pads were lit, the slot set to `None`, or a
 crash.
 
-Fix: `run_probe.bat --clear --port "MIDIOUT3"` (with Live closed, since the port
-is exclusive). Sending a note-off from anywhere will not clear them.
+Fix, Windows: `run_probe.bat --clear --port "MIDIOUT3"` — with Live closed, since
+Windows MIDI ports are exclusive. macOS/Linux:
+`./venv-midi/bin/python tools/mvave_probe.py --clear --port <your output port>`,
+and you do **not** need to close Live; CoreMIDI and ALSA ports are multi-client. Sending a note-off from anywhere will not clear them.
 
 ### One knob appears dead
 
-Almost always **the wrong knob bank**. KNOB BANK switches all eight encoders at
-once and each bank has its own CCs, so a mapping made on bank 1 looks completely
-dead while bank 2 is selected, and vice versa. Check the bank before debugging
-anything else about a knob.
+**The wrong knob bank moves a _different_ macro, not nothing.** Both banks are
+mapped now, so a knob that does nothing at all is a different fault: check the
+device's macro count (a rack with eight macros has nothing for bank 2's top six
+to drive — `Log.txt` says so once per device), then `run_probe.bat --knobs`.
+Historically, when one bank was unassigned, the wrong bank *was* the usual
+cause.
 
 If it is dead on bank 2 as well, its CC may not match the map — verify with
 `run_probe.bat --knobs`, which reports each encoder separately and names silent
@@ -399,13 +429,17 @@ Files in `MVave_SMC_PAD/` have **CRLF line endings**. Line-anchored patterns in
 
 ## Uninstalling
 
-1. In Live, Preferences → Link, Tempo & MIDI: set **both** Control Surface slots
-   showing `MVave_SMC_PAD` and `MVave_SMC_KNOBS` back to `None`.
-2. Delete both folders from the Remote Scripts directory you installed them to:
+1. In Live, Preferences → Link, Tempo & MIDI: set **every** Control Surface slot
+   showing `MVave_SMC_PAD`, `MVave_SMC_KNOBS` or `MVave_SMC_STEPSEQ` back to
+   `None`. If you installed the sequencer, that is three slots, and two of them
+   are on the port you are about to hand back.
+2. Delete the folders from the Remote Scripts directory you installed them to
+   (three, if you installed the sequencer):
 
    ```
    <remote-scripts-dir>\MVave_SMC_PAD
    <remote-scripts-dir>\MVave_SMC_KNOBS
+   <remote-scripts-dir>\MVave_SMC_STEPSEQ
    ```
 
 3. If you had **Mackie Control** in a slot before this, put it back on

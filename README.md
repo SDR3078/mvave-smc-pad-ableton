@@ -88,6 +88,9 @@ script with its own setup in **[docs/STEPSEQ.md](docs/STEPSEQ.md)**.
 ├── reference/
 │   ├── launchpad.spc   the clip-launcher preset, as exported by the editor
 │   └── sequencer.spc   the step-sequencer preset — 41 bytes differ
+│                       (both are this project's own pad and encoder
+│                        assignments: byte-scanned, they contain no vendor
+│                        text, branding or serial — pure configuration data)
 └── tools/
     ├── mvave_probe.py       the MIDI probe
     ├── run_probe.bat        Windows launcher; builds its own virtualenv
@@ -122,10 +125,12 @@ than hidden:
   both would bite anyone adapting this. See [DEVELOPMENT.md](docs/DEVELOPMENT.md).
 - **`PARAMCONTROL` in the pad script maps CC 1–8 on a port that sends no CCs.**
   Inert, but it means both scripts build a device component.
-- **The two pad scripts draw over each other.** Both render LEDs on Live-side
-  events regardless of which pad preset is active. Each could watch for the
-  other's note range and stand down; until then, load one at a time if the
-  flicker bothers you.
+- **The two pad scripts share `MIDIOUT3` but not note numbers.** The launcher
+  writes only notes 1–21 and the sequencer only 101–121, and lighting a note the
+  active preset does not use does nothing (measured — see
+  `MVave_SMC_STEPSEQ/MIDI_Map.py`). So both can stay loaded and the preset switch
+  is the mode switch. The one resource they do share is the device's MIDI input
+  buffer; neither sends in bulk, so this has not been a problem in practice.
 - **Every sequencer step is written at velocity 127.** The pads that light are
   the pads that cannot sense velocity, and no encoder is free to carry a paint-
   velocity knob. Three ways out in [STEPSEQ.md](docs/STEPSEQ.md) section 9.
@@ -137,18 +142,41 @@ than hidden:
 
 `MVave_SMC_PAD/` descends from **Hanz Petrov's "Introduction to the Framework
 Classes"** template, the long-standing starting point for custom Live Remote
-Scripts. The session, mixer, transport, zooming and view components are
-substantially his; the clip-state colours, the modifier button and every value in
-`MIDI_Map.py` are not. `MVave_SMC_KNOBS/`, `MVave_SMC_STEPSEQ/`, `tools/` and `docs/`
+Scripts. Its six `Special*Component.py` files — channel strip, mixer, session,
+transport, view controller and zooming — are template code of **mixed and partly
+unverified origin**: substantially Petrov's, but one is marked a partial
+decompile of Ableton's own scripts and another credits an "OpenLabs" module for
+its undo/redo block. See the Licence section below and the file-by-file table in
+[DEVELOPMENT.md](docs/DEVELOPMENT.md). The clip-state colours, the modifier
+button and every value in `MIDI_Map.py` are this project's. `MVave_SMC_KNOBS/`, `MVave_SMC_STEPSEQ/`, `tools/` and `docs/`
 are original.
 [DEVELOPMENT.md](docs/DEVELOPMENT.md) carries a file-by-file provenance table.
 
-Not affiliated with or endorsed by Ableton or M-Vave/Cuvave. Product names belong
-to their owners.
+Not affiliated with or endorsed by Ableton, M-Vave/Cuvave, Novation or Focusrite.
+Product names — including Live, Push, Launchpad and Mackie Control — belong to
+their owners and are used here descriptively.
 
 ## Licence
 
-**Not yet chosen.** Because `MVave_SMC_PAD/` derives from a publicly published
-tutorial template, its licensing position is inherited rather than free to pick,
-and that should be settled before this is shared widely. `MVave_SMC_KNOBS/`,
-`MVave_SMC_STEPSEQ/`, `tools/` and `docs/` are original work.
+**Not yet chosen, and it cannot be until the questions below are settled.**
+`MVave_SMC_KNOBS/`, `MVave_SMC_STEPSEQ/`, `tools/` and `docs/` are original work.
+`MVave_SMC_PAD/` is not, and what it inherits comes from **three** upstreams, not
+one:
+
+- **Hanz Petrov's "Introduction to the Framework Classes"** — the structural
+  skeleton, the 128-element MIDI map and the `Special*` components. The original
+  is not linked here and its terms are not recorded.
+- **Ableton's own shipped scripts.** `SpecialViewControllerComponent.py:5` carries
+  `# Partial --== Decompile ==-- with fixes`, which asserts on its face that the
+  file was recovered from compiled bytecode rather than typed from a tutorial —
+  a different upstream from the other two.
+- **An "OpenLabs" module.** `SpecialTransportComponent.py` credits it in seven
+  places for the undo/redo block. What OpenLabs is, which file the code came
+  from, and under what terms are all unrecorded. The block is currently unwired
+  (`UNDO = -1`, `REDO = -1`), so removing it would cost nothing.
+
+There is no LICENSE, COPYING or NOTICE file in this repository and no upstream is
+linked, so "inherited" currently points at nothing a reader — or the author — can
+check. Three things have to be decided before this is shared widely: whether the
+decompiled file can ship, whether the OpenLabs block stays, and where Petrov's
+original is and what it says about reuse.
