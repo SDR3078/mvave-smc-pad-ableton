@@ -317,6 +317,12 @@ def install_stubs():
         def refresh_state(self):
             pass
 
+        def _on_selected_track_changed(self):
+            pass
+
+        def set_device_component(self, component):
+            self._device_component = component
+
         def disconnect(self):
             pass
 
@@ -324,6 +330,24 @@ def install_stubs():
     cs_module.ControlSurface = ControlSurface
     framework = types.ModuleType('_Framework')
     framework.ControlSurface = cs_module
+
+    dc_module = types.ModuleType('_Framework.DeviceComponent')
+
+    class DeviceComponent(object):
+        """Only what MVave_SMC_KNOBS touches: a name, set_device, device()."""
+
+        def __init__(self):
+            self.name = None
+            self._device = None
+
+        def set_device(self, device):
+            self._device = device
+
+        def device(self):
+            return self._device
+
+    dc_module.DeviceComponent = DeviceComponent
+    sys.modules['_Framework.DeviceComponent'] = dc_module
 
     sys.modules['Live'] = live
     sys.modules['Live.Clip'] = clip_module
@@ -347,6 +371,40 @@ from MVave_SMC_STEPSEQ.MVave_SMC_STEPSEQ import (MVave_SMC_STEPSEQ, decode_relat
 # hands back the class, not the module, and patching a flag on it silently misses.
 # sys.modules is not shadowed, so it is the reliable handle.
 SEQ_MODULE = sys.modules['MVave_SMC_STEPSEQ.MVave_SMC_STEPSEQ']
+
+from MVave_SMC_KNOBS import MVave_SMC_KNOBS as _knobs_pkg                  # noqa: E402
+KNOBS_MODULE = sys.modules['MVave_SMC_KNOBS.MVave_SMC_KNOBS']
+
+
+# ------------------------------------------------- knob-script fixtures
+
+class FakeParameter(object):
+    def __init__(self, minimum, maximum, value=0.0, quantized=False):
+        self.min, self.max, self.value = minimum, maximum, value
+        self.is_quantized, self.is_enabled = quantized, True
+
+
+class FakeDevice(object):
+    def __init__(self, parameters, name='Fake Rack'):
+        self.parameters, self.name = parameters, name
+
+
+def _fake_component(spelling, held):
+    """A DeviceComponent that exposes its device in one of four ways.
+
+    'method' and 'property' are the two _Framework spellings the script has to
+    survive; 'private' is the fallback for a component with no public getter;
+    'nothing' exposes none of them and must take the logged fallback.
+    """
+    if spelling == 'method':
+        return type('M', (), {'device': lambda self: held})()
+    if spelling == 'property':
+        return type('P', (), {'device': property(lambda self: held)})()
+    if spelling == 'private':
+        obj = type('V', (), {})()
+        obj._device = held
+        return obj
+    return type('N', (), {})()
 
 
 # --------------------------------------------------------------------- helper
@@ -1238,7 +1296,11 @@ class Configuration(unittest.TestCase):
                         launcher.update(i for i in item if isinstance(i, int))
         launcher.discard(-1)
 
-        mine = set(C.PAD_NOTES) | set(C.PAD_NOTES_B)
+        # LED_NOTES too: it decides where _send_led writes on the MIDIOUT3 both
+        # scripts share, and the map file records having held a fixed 1-16 LED
+        # map once already. Without it, one constant makes the sequencer paint
+        # its step colours onto the launcher's clip slots, suite still green.
+        mine = set(C.PAD_NOTES) | set(C.PAD_NOTES_B) | set(C.LED_NOTES)
         mine.update(n for n in (C.BTN_PLAY, C.BTN_VIEW, C.BTN_MOD,
                                 C.BTN_LEFT, C.BTN_RIGHT) if n is not None)
 
@@ -1353,6 +1415,159 @@ class ButtonLeds(SeqTest):
             self.assertEqual(self.btn_writes(C.BTN_VIEW), [])
         finally:
             seqmod.BUTTON_LEDS = original
+
+
+# ------------------------------------------------- the other two scripts
+
+def _load_launcher_map():
+    """MVave_SMC_PAD/MIDI_Map.py, by path -- its package __init__ imports Live."""
+    import importlib.util
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    spec = importlib.util.spec_from_file_location(
+        'pad_midi_map', os.path.join(root, 'MVave_SMC_PAD', 'MIDI_Map.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+NOT_NOTES = frozenset((
+    'BUTTONCHANNEL', 'SLIDERCHANNEL', 'MESSAGETYPE', 'PADCHANNEL',
+    'TSB_X', 'TSB_Y', 'TRACK_OFFSET', 'SCENE_OFFSET', 'TEMPO_TOP', 'TEMPO_BOTTOM',
+    # CC assignments, on SLIDERCHANNEL -- same number space, different message
+    # type, so they can never collide with a note.
+    'TEMPOCONTROL', 'MASTERVOLUME', 'CUELEVEL', 'CROSSFADER', 'TRACKVOL',
+    'TRACKPAN', 'TRACKSENDA', 'TRACKSENDB', 'TRACKSENDC', 'PARAMCONTROL',
+    # Drum-rack pitches Live translates TO; never transmitted.
+    'DRUM_PADS'))
+
+
+def _launcher_notes(pad):
+    """Every note constant the launcher declares, as (name, value) pairs."""
+    out = []
+    for name in dir(pad):
+        if not name.isupper() or name in NOT_NOTES or name.startswith('CLIP_'):
+            continue
+        value = getattr(pad, name)
+        if isinstance(value, int):
+            out.append((name, value))
+        elif isinstance(value, tuple):
+            for item in value:
+                if isinstance(item, int):
+                    out.append((name, item))
+                elif isinstance(item, tuple):
+                    out.extend((name, i) for i in item if isinstance(i, int))
+    return out
+
+
+class LauncherMap(unittest.TestCase):
+    """MVave_SMC_PAD/MIDI_Map.py -- the file INSTALL.md tells users to edit.
+
+    Six single-constant edits to it used to pass the only check that read this
+    file and then raise inside MVave_SMC_PAD.__init__, where Live disables the
+    whole control surface silently and the only evidence is a Log.txt traceback
+    after a full restart. These assertions are the half of that a machine can
+    catch in a second.
+    """
+
+    def setUp(self):
+        self.pad = _load_launcher_map()
+
+    def test_every_note_constant_is_a_legal_index(self):
+        # -1 is the "unassigned" sentinel; 128+ is an IndexError at load and a
+        # value below -1 silently binds the wrong note from the end of the list.
+        for name, value in _launcher_notes(self.pad):
+            self.assertTrue(-1 <= value <= 127, '%s = %r' % (name, value))
+
+    def test_the_grid_dimensions_are_whole_numbers(self):
+        # A float here is a TypeError inside range() at load.
+        for name in ('TSB_X', 'TSB_Y'):
+            self.assertIsInstance(getattr(self.pad, name), int, name)
+
+    def test_clipnotemap_covers_the_declared_grid(self):
+        p = self.pad
+        self.assertGreaterEqual(len(p.CLIPNOTEMAP), p.TSB_Y)
+        for row in p.CLIPNOTEMAP[:p.TSB_Y]:
+            self.assertGreaterEqual(len(row), p.TSB_X)
+
+    def test_the_indexed_tuples_are_long_enough(self):
+        # _setup_session_control indexes SCENELAUNCH by range(TSB_X) and
+        # TRACKSTOP by range(TSB_Y) -- the documented swap. Pinned as the code
+        # is, not as it reads, so a non-square grid fails here and not in Live.
+        p = self.pad
+        self.assertGreaterEqual(len(p.SCENELAUNCH), p.TSB_X)
+        self.assertGreaterEqual(len(p.TRACKSTOP), p.TSB_Y)
+        for name in ('TRACKREC', 'TRACKSOLO', 'TRACKMUTE', 'TRACKSEL',
+                     'TRACKVOL', 'TRACKPAN', 'TRACKSENDA', 'TRACKSENDB',
+                     'TRACKSENDC', 'PARAMCONTROL', 'DEVICEBANK'):
+            self.assertGreaterEqual(len(getattr(p, name)), 8, name)
+
+    def test_the_clip_palette_stays_in_the_measured_range(self):
+        # Same hardware palette as the sequencer's: everything above ~64 is one
+        # flat blue, and above 127 is not a legal MIDI byte at all.
+        for name in ('CLIP_PLAYING', 'CLIP_STOPPED', 'CLIP_RECORDING',
+                     'CLIP_TRIGGERED_PLAY', 'CLIP_TRIGGERED_REC'):
+            value = getattr(self.pad, name)
+            self.assertTrue(0 <= value <= 63, '%s = %d' % (name, value))
+
+
+class KnobScript(unittest.TestCase):
+    """MVave_SMC_KNOBS had no test of any kind before this class."""
+
+    def setUp(self):
+        self.knobs = KNOBS_MODULE.MVave_SMC_KNOBS(FakeCInstance())
+
+    def test_the_macro_map_is_self_consistent(self):
+        K = KNOBS_MODULE
+        self.assertFalse(set(K.MACRO_BY_CC) & set(K.NAV_CCS),
+                         'a macro CC collides with a navigation CC')
+        for cc, macro in K.MACRO_BY_CC.items():
+            self.assertTrue(0 <= cc <= 127, 'CC %r' % (cc,))
+            self.assertTrue(1 <= macro <= 127,
+                            'macro %r -- index 0 is the device on/off switch' % (macro,))
+        values = list(K.MACRO_BY_CC.values())
+        self.assertEqual(len(set(values)), len(values), 'two CCs drive one macro')
+
+    def test_one_click_moves_a_rack_macro_by_exactly_one(self):
+        # The documented guarantee (INSTALL.md): a rack macro runs 0-127, a
+        # range of 127, so one click is one unit. STEPS_PER_SWEEP = 128.0 was
+        # shipped once and moves 0.992, which never lands on an integer.
+        param = FakeParameter(0.0, 127.0)
+        # Bound through the component, not the cache: _adjust_macro resolves the
+        # device at write time, which is the whole point of _current_device().
+        self.knobs._device.set_device(
+            FakeDevice([FakeParameter(0.0, 1.0), param]))
+        self.knobs._adjust_macro(1, 1)
+        self.assertEqual(param.value, 1.0)
+
+    def test_the_device_lookup_engages_on_every_spelling(self):
+        # getattr(component, 'device', None) cannot tell an absent attribute
+        # from a getter answering None, which made this fall back to the stale
+        # cache on a fresh start. A sentinel distinguishes them.
+        live_device, stale = FakeDevice([]), FakeDevice([])
+        for spelling in ('method', 'property', 'private'):
+            for held in (live_device, None):
+                self.knobs._device = _fake_component(spelling, held)
+                self.knobs._target_device = stale
+                self.assertIs(self.knobs._current_device(), held,
+                              '%s spelling, held=%r' % (spelling, held))
+
+    def test_an_absent_getter_falls_back_and_says_so(self):
+        self.knobs._device = _fake_component('nothing', None)
+        stale = FakeDevice([])
+        self.knobs._target_device = stale
+        self.assertIs(self.knobs._current_device(), stale)
+        self.assertTrue(any('no device getter' in line
+                            for line in self.knobs._c_instance.log))
+
+    def test_both_scripts_decode_a_click_the_same_way(self):
+        # One measured hardware fact, two copies -- KNOBS hard-codes CENTRE and
+        # the sequencer exposes KNOB_MODE. If they ever disagree, the same byte
+        # moves the session box and the step lane in opposite directions.
+        self.assertEqual(KNOBS_MODULE.ENCODER_MODE, C.KNOB_MODE)
+        for value in (63, 64, 65, 1, 127):
+            self.assertEqual(KNOBS_MODULE.decode_relative(value),
+                             decode_relative(value, C.KNOB_MODE),
+                             'value %d' % value)
 
 
 if __name__ == '__main__':
