@@ -158,10 +158,10 @@ their owners and are used here descriptively.
 
 ## Licence
 
-**Not yet chosen, and it cannot be until the questions below are settled.**
-`MVave_SMC_KNOBS/`, `MVave_SMC_STEPSEQ/`, `tools/` and `docs/` are original work.
-`MVave_SMC_PAD/` is not, and what it inherits comes from **three** upstreams, not
-one:
+**Not yet chosen.** `MVave_SMC_KNOBS/`, `MVave_SMC_STEPSEQ/`, `tools/` and
+`docs/` are original work. `MVave_SMC_PAD/` is not, and what it inherits comes
+from **three** upstreams, not one. All three ship, deliberately — the point of
+listing them here is that a reader can see exactly what they are getting:
 
 - **Hanz Petrov's "Introduction to the Framework Classes"** — the structural
   skeleton, the 128-element MIDI map and the `Special*` components. Published on
@@ -179,19 +179,18 @@ one:
   this appears to arrive with the lineage rather than having been decompiled
   here. That identifies the path, not the permission.
 - **An "OpenLabs" module.** `SpecialTransportComponent.py` credits it in seven
-  places for the undo/redo block. Searched 2026-09-05 without finding a
+  places for the undo/redo block. Searched 2026-09-05 without finding
   an identifiable OpenLabs release: `SpecialTransportComponent.py` is described in
   the community as a re-usable module that circulated with APC40 scripts, which
   Petrov's blog also distributes, so it plausibly arrived by the same route —
   but that is inference, and the origin remains unestablished. The block is
-  unwired (`UNDO = -1`, `REDO = -1`), so removing it would cost nothing and
-  would close this question outright.
+  kept, and currently unwired (`UNDO = -1`, `REDO = -1`) — see
+  [DEVELOPMENT.md](docs/DEVELOPMENT.md) for how to re-enable it.
 
-There is no LICENSE, COPYING or NOTICE file in this repository. The upstream that
-*can* be identified states no terms of its own, so what is inherited is an
-absence rather than a permission — which is worth knowing before choosing a
-licence for the parts that are original.
-
-Two decisions remain: whether `SpecialViewControllerComponent.py`, marked a
-partial decompile, can ship at all; and whether the unwired OpenLabs undo/redo
-block stays or goes. Removing the block is free and settles one of them.
+There is no LICENSE, COPYING or NOTICE file in this repository yet. The one
+upstream that *can* be identified states no terms of its own, so what
+`MVave_SMC_PAD/` inherits is an absence rather than a permission. That is the
+constraint on choosing a licence for the parts that are original, and it is why
+this section exists in place of one: everything above is disclosed so that
+anyone reusing this can make their own assessment of the parts that are not
+mine to license.
