@@ -1,3 +1,8 @@
+# Revision of these scripts, for bug reports: the install is "copy a
+# folder", so a downloaded copy carries no commit and nothing else here
+# names a version. Quote this line.
+SCRIPT_REVISION = '2026-09-06'
+
 # Hardware and layout constants for the SMC-PAD step sequencer.
 #
 # Everything the script knows about the controller lives in this file.

@@ -1408,6 +1408,80 @@ class LogFlooding(SeqTest):
         self.assertEqual(len(lines), 2, 'the second subsystem was dropped')
 
 
+class RetiredClaims(unittest.TestCase):
+    """Facts that were corrected once and must not come back anywhere else.
+
+    Five review rounds found the same shape of defect over and over: a claim
+    fixed in one file and left standing in another -- CC 38 corrected in a
+    block and surviving in a table eight lines away; the flag-byte-as-port
+    model retired in HARDWARE.md and still instructing in STEPSEQ.md; a
+    pre-fix function body quoted in DEVELOPMENT.md as the pattern to copy.
+    Six separate instances in the fifth round alone.
+
+    Every one of them is a literal string that outlived its correction, so
+    this is a grep, not a judgement. Add a row whenever a claim is retired;
+    the cost is one line and it never rots the way prose does.
+    """
+
+    # (phrase, why it was retired). Case-insensitive, substring.
+    RETIRED = (
+        ('eight Shift+Pad presets',
+         'those eight note ranges are PAD BANK positions of ONE preset file'),
+        ('REC is -1 above',
+         'never existed in MIDI_Map.py in any revision'),
+        ('satisfied by padding',
+         'the setter is not called at all, so nothing is padded'),
+        ('All three scripts now call this body',
+         'MVave_SMC_STEPSEQ has no such body -- it uses a guarded listener'),
+        ('Dependency install failed',
+         'run_probe.bat prints DOWNLOAD or IMPORTED, two separate labels'),
+        ('set_scene_bank_buttons(None, None)',
+         'commit 204acbe replaced it; quoting it reinstates a permanent unbind'),
+        ('CC 118 and 119 are chosen',
+         'present tense: the padding that used them is gone'),
+        ('draw over each other',
+         'the two port-3 scripts write disjoint note ranges (measured)'),
+        ('load one at a time',
+         'same -- both scripts stay loaded, the preset switch is the mode switch'),
+        ('CC 38',
+         'the encoders send CC 1-18; 38-45 was never measured on this unit'),
+        ('take a bank you do not use',
+         'the sequencer needs its own PRESET, not a spare bank'),
+        ('one bank per Shift+Pad',
+         'one bank per PAD BANK position; Shift+Pad loads a different file'),
+        ('only the two navigation encoders',
+         'all sixteen must be relative -- the macros are decoded as deltas too'),
+        ('All five `Special*Component.py`',
+         'there are six'),
+    )
+
+    # STEPSEQ-BRIEF.md is the original build brief, kept verbatim as history
+    # and superseded by STEPSEQ.md. It is not held to these.
+    EXEMPT = ('STEPSEQ-BRIEF.md',)
+
+    def test_no_retired_claim_survives_anywhere_in_the_docs(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        documents = []
+        for directory in (root, os.path.join(root, 'docs')):
+            for name in sorted(os.listdir(directory)):
+                if name.endswith('.md') and name not in self.EXEMPT:
+                    documents.append(os.path.join(directory, name))
+        self.assertTrue(documents, 'found no documents to check')
+
+        survivors = []
+        for path in documents:
+            with open(path, encoding='utf-8') as handle:
+                lines = handle.read().split('\n')
+            for number, line in enumerate(lines, 1):
+                for phrase, why in self.RETIRED:
+                    if phrase.lower() in line.lower():
+                        survivors.append('%s:%d  %r\n      retired because: %s'
+                                         % (os.path.relpath(path, root),
+                                            number, phrase, why))
+        self.assertEqual(survivors, [],
+                         'retired claims are back:\n    ' + '\n    '.join(survivors))
+
+
 class SourceFiles(unittest.TestCase):
     """Every shipped .py must parse, at the floor the docs claim.
 

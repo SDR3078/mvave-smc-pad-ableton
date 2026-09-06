@@ -57,9 +57,10 @@ Requirements and failure modes:
 
 | Symptom | Cause |
 |---|---|
-| `Could not create the virtual environment` | No real Python on `PATH`. Check `python --version`; the Microsoft Store stub is not enough. |
+| `Could not create the virtual environment` | No real Python found. The launcher tries `py -3` first and then `python`; check `py -3 --version` and `python --version`. The Microsoft Store alias stub answers `python` but is not enough. |
 | `Could not enter ... (UNC path?)` | The script was launched from a `\\server\share` path. Map it to a drive letter first. |
-| `Dependency install failed` | No network access for pip. |
+| `Could not DOWNLOAD the dependencies` | No network access for pip, or no wheel for this Python version and architecture. The launcher prints the version it used. |
+| `The dependencies installed but could not be IMPORTED` | A runtime problem, not a download one: `python-rtmidi` needs a working MIDI backend. On Linux that usually means the ALSA development headers. |
 
 On a non-zero exit the batch file prints the exit code and pauses, so it is safe
 to double-click.
@@ -495,11 +496,12 @@ The final report:
 ```
 === encoder map ===
   bank  encoder  ch  CC    mode         msgs  values
-  1     1        1   7     relative       26  63, 65
-  1     2        1   8     relative       19  63, 65
-  2     3        1   10    relative        9  63, 65
-  2     7        1   9     relative       14  63, 65
-  2     8        1   10    relative       11  63, 65
+  1     1        1   7     relative (centre)    26  63, 65
+  1     2        1   8     relative (centre)    19  63, 65
+  1     4        -   -     -                      0
+  2     3        1   10    relative (centre)      9  63, 65
+  2     7        1   9     relative (centre)    14  63, 65
+  2     8        1   10    relative (centre)    11  63, 65
 
 Sent nothing: bank 1 enc 4
 CLASH: bank 2 ch 1 CC 10 came from encoders 3, 8
@@ -509,9 +511,18 @@ CLASH: bank 2 ch 1 CC 10 came from encoders 3, 8
 
 | `mode` | Criterion | Meaning |
 |---|---|---|
-| `relative` | values ⊆ {63, 64, 65}, or ⊆ {1, 127}, or ⊆ {1, 64, 127} | each message is a **step**: direction, not position |
-| `relative?` | 3 or fewer distinct values, none of the patterns above | probably relative — turn it further and re-run to be sure |
-| `absolute` | more than 3 distinct values | each message is a **position** on 0–127 |
+| `relative (centre)` | every value within 8 of 64 | each message is a **step**. Set `ENCODER_MODE = 'centre'` in `MVave_SMC_KNOBS.py` — 63 back, 65 forward |
+| `relative (twos)` | every value ≤ 8 or ≥ 120 | also a **step**, the other convention. Set `ENCODER_MODE = 'twos'` — 127 back, 1 forward |
+| `relative?` | 3 or fewer distinct values, neither cluster above | probably relative — turn it further and re-run to be sure |
+| `absolute` | more than 3 distinct values, spread across the range | each message is a **position** on 0–127 |
+| `-` | the encoder sent nothing at all | it is on another bank, unassigned, or you missed it |
+
+The two relative labels are the two values of `ENCODER_MODE`, deliberately: they
+are mutually ambiguous on the wire, so nothing can detect the convention at run
+time and feeding the wrong one to the session box moves it 63 tracks per click,
+silently. The clusters are deliberately loose rather than exact sets — an
+encoder that accelerates, or a poll that catches two ticks at once, sends 2 or
+126, and calling that `absolute` is the one answer that wires it up wrong.
 | `-` | nothing received | silent |
 
 The distinction decides how a control can be used. An absolute CC carries a value

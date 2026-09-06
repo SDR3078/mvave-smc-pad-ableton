@@ -12,6 +12,7 @@ setup, see [INSTALL.md](INSTALL.md).
 ## Contents
 
 - [How Live loads a Remote Script](#how-live-loads-a-remote-script)
+- [Package naming, and one hazard it creates](#package-naming-and-one-hazard-it-creates)
 - [Origin and attribution](#origin-and-attribution)
 - [Why there are two scripts](#why-there-are-two-scripts)
 - [How the knob script reaches the pad script's session box](#how-the-knob-script-reaches-the-pad-scripts-session-box)
@@ -109,9 +110,11 @@ in four parts from March 2010, still online as of 2026-09-05, and carrying no
 licence statement on either the articles or the Support Files page that hosts
 the example scripts. That page also distributes decompiled Live 8.2.2
 `_Framework`, APC40 and APC20 scripts, which is the likely origin of the
-`Partial --== Decompile ==--` marker in `SpecialViewControllerComponent.py` — the long-standing tutorial skeleton for custom
-Live Remote Scripts, structured as an APC40/APC20 emulation with a flat
-`MIDI_Map.py` of note and CC constants. Its fingerprints are all over the code:
+`Partial --== Decompile ==--` marker in `SpecialViewControllerComponent.py`.
+
+The template is the long-standing tutorial skeleton for custom Live Remote
+Scripts, structured as an APC40/APC20 emulation with a flat `MIDI_Map.py` of
+note and CC constants. Its fingerprints are all over this code:
 the class docstring still says *"Script for M-Vave SMC-PAD in APC emulation
 mode"*, several files carry `# emacs-mode: -*- python-*-` and
 `# local variables: tab-width: 4` headers and footers,
@@ -137,7 +140,7 @@ handlers.
 | `self._missing_clip_setters` version-tolerance logging | **This project** |
 | Every value in `MIDI_Map.py` (note map, 4×4 grid, palette indices, transport notes) | **This project** |
 | `MVave_SMC_KNOBS/` — except `__init__.py`, which is the template's boilerplate with the names changed, footer included | **This project** |
-| `MVave_SMC_STEPSEQ/` in its entirety — see [STEPSEQ.md](STEPSEQ.md) | **This project** |
+| `MVave_SMC_STEPSEQ/` — except `__init__.py`, the same three-line boilerplate as the row above | **This project** |
 
 **The copy in this repo passed through at least one hand between Petrov's
 original and this project.** The `TSB_X`/`TSB_Y` indirection and comments written
@@ -533,11 +536,17 @@ def _follow_selected_track(self):                 # wrapped by the guard above
     self._device_component.set_device(device_to_select)
 ```
 
-All three scripts now call this body from inside a `try`, with the superclass
-call separately guarded, so a framework failure cannot cancel the rebinding
-below it. The shape above — lifted from the pad template, which is known to work
-against this
-vintage of `_Framework` — is the *only* place `set_device()` is called. There is
+All three scripts contain this failure mode and all three guard it — but not
+with the same shape, so do not read one and assume the others.
+`MVave_SMC_PAD` and `MVave_SMC_KNOBS` both override
+`_on_selected_track_changed`, wrap the body in a `try`, and give the superclass
+call its own inner `try` so that a framework failure cannot cancel the rebinding
+below it. `MVave_SMC_STEPSEQ` has no such override at all — it reaches the
+selection through a `selected_track` listener and guards that with the
+`@_guarded` decorator. All three latch and cap what they log.
+
+The shape above — lifted from the pad template, which is known to work against
+this vintage of `_Framework` — is the *only* place `set_device()` is called. There is
 no equivalent hook on load and none on "selected device changed within the same
 track". So:
 
@@ -615,8 +624,10 @@ script never finishes constructing. You do not lose two macros; you lose the who
 control surface. In a build where assertions are stripped you might instead get an
 index error later, or silently wrong behaviour.
 
-CC 118 and 119 are chosen because they are undefined in the MIDI specification —
-120–127 are channel mode messages and would be a poor choice of filler.
+When that earlier version padded, it used CC 118 and 119, because they are
+undefined in the MIDI specification — 120–127 are channel mode messages and
+would be a poor choice of filler. Neither number appears anywhere in the code
+today; the padding went with the setter call.
 
 The pad script solves the same problem the other way, by refusing to call the
 setter at all unless every slot is assigned (`if None not in device_param_controls`).
@@ -733,12 +744,21 @@ def _set_session_banking(self, scenes):
         self._session.set_track_bank_buttons(None, None)
         self._session.set_scene_bank_buttons(forward, back)
     else:
-        self._session.set_scene_bank_buttons(None, None)
+        self._session.set_scene_bank_buttons(self._note_map[SESSIONDOWN],
+                                             self._note_map[SESSIONUP])
         self._session.set_track_bank_buttons(forward, back)
 ```
 
-Passing `None` to unhook is the template's own idiom for an unassigned button, so
-it is a supported value rather than a trick.
+In the `if scenes:` branch, passing `None` to unhook is the template's own idiom
+for an unassigned button, so it is a supported value rather than a trick.
+
+The `else:` branch **restores what the constructor set** rather than passing
+`(None, None)`, and that distinction is the whole point: with `SESSIONDOWN`/`UP`
+assigned, hardcoding `None` here unbound them permanently on the first modifier
+press — they worked until you first held the modifier, then were dead for the
+rest of the session. Commit `204acbe` fixed it. An earlier revision of this
+document quoted the pre-fix body, so anyone re-enabling the modifier by copying
+from here reinstated the bug.
 
 It was the first working answer to "two arrows, three things to navigate", and it
 cost the record button — nothing is shared with the transport component, because
@@ -756,10 +776,6 @@ To bring it back, in `MIDI_Map.py`:
 | `REC` | `-1` | otherwise the transport component also claims note 19 and every modifier press toggles record |
 | `SESSIONLEFT`, `SESSIONRIGHT` | `20`, `21` | `_set_session_banking` reads *these*, not `TRACKLEFT/RIGHT`; leave them at `-1` and the modifier swaps `None` for `None` |
 | `TRACKLEFT`, `TRACKRIGHT` | `-1` | otherwise notes 20/21 are bound twice and each press both selects a track and banks the box |
-
-> The comment block above `MODIFIER` in `MIDI_Map.py` is stale: it says *"REC is
-> -1 above"*, which described the configuration when the modifier was enabled.
-> `REC` is 19 today. The table above is authoritative.
 
 A third option was considered and not built: pressing **both arrows at once** to
 toggle the mode. It costs no button, but the mode would be invisible on the device
@@ -795,10 +811,15 @@ highlighted session box.
 **3. Start from the constants, in all three places.** `MVave_SMC_PAD/MIDI_Map.py`
 and `MVave_SMC_STEPSEQ/MIDI_Map.py` are files; the encoder script's live at the
 top of `MVave_SMC_KNOBS.py` (`CC_TRACK`, `CC_SCENE`, `MACRO_BY_CC`, `CENTRE`,
-`ENCODER_MODE`, `STEPS_PER_SWEEP`) because there are only a handful. Set
-everything you do not have
-to `-1` and fill in what you do. The 128-element map means unassigned controls cost
-nothing but a constructed object. Resize the grid via `TSB_X`/`TSB_Y` and
+`ENCODER_MODE`, `STEPS_PER_SWEEP`) because there are only a handful.
+
+**The two map files spell "unassigned" differently, and it matters.** In
+`MVave_SMC_PAD/MIDI_Map.py` it is `-1`: that map is a 129-element list whose
+last entry is `None`, so an unassigned control costs nothing but a constructed
+object. In `MVave_SMC_STEPSEQ/MIDI_Map.py` it is `None`, because those constants
+go straight to `Live.MidiMap` from an unguarded `build_midi_map` — a negative
+there is forwarded as a MIDI note number. Use the value the file you are editing
+uses, and fill in what you do have. Resize the grid via `TSB_X`/`TSB_Y` and
 `CLIPNOTEMAP`.
 
 **4. Deal with LEDs on their own terms.** Note that there are two write paths,

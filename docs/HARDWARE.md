@@ -122,7 +122,7 @@ buttons = 17 - 21
 
 The pads are not velocity-sensitive on this port. Every strike reports 127
 regardless of how hard you hit it, so on port 3 the pads are buttons, which is
-what a clip grid wants. (Section 5.2 explains why the velocity is fixed, and
+what a clip grid wants. (Section 5.4 explains why the velocity is fixed, and
 section 6 covers the VELOCITY settings that do not change it.)
 
 The note-on/velocity-0 idiom matters in both directions. The device uses it for

@@ -56,6 +56,11 @@ sends pad notes and still lights pads from incoming MIDI; nothing requires Live
 to interpret those notes as mute and solo. Fully reversible — put
 `Mackie Control` back in the slot and you are where you started.
 
+**Revision.** These scripts carry no version number in Live. If you need to
+quote one — a bug report, a question — use `SCRIPT_REVISION` at the top of
+`MVave_SMC_PAD/MIDI_Map.py`. Installing is "copy a folder", so a downloaded
+copy has no commit hash to quote instead.
+
 ## Install
 
 Copy `MVave_SMC_PAD/` and `MVave_SMC_KNOBS/` into Live's Remote Scripts
@@ -84,7 +89,8 @@ script with its own setup in **[docs/STEPSEQ.md](docs/STEPSEQ.md)**.
 │   ├── PROBE.md        the measurement tool, mode by mode
 │   ├── FINDINGS.md     how the device was reverse-engineered, and what went wrong
 │   ├── STEPSEQ.md      the step sequencer: design, install, what is still unmeasured
-│   └── STEPSEQ-BRIEF.md  the original build brief, kept verbatim
+│   └── STEPSEQ-BRIEF.md  the original build brief, kept verbatim — history,
+│                       superseded by STEPSEQ.md wherever they disagree
 ├── reference/
 │   ├── launchpad.spc   the clip-launcher preset, as exported by the editor
 │   └── sequencer.spc   the step-sequencer preset — 41 bytes differ
@@ -148,8 +154,10 @@ unverified origin**: substantially Petrov's, but one is marked a partial
 decompile of Ableton's own scripts and another credits an "OpenLabs" module for
 its undo/redo block. See the Licence section below and the file-by-file table in
 [DEVELOPMENT.md](docs/DEVELOPMENT.md). The clip-state colours, the modifier
-button and every value in `MIDI_Map.py` are this project's. `MVave_SMC_KNOBS/`, `MVave_SMC_STEPSEQ/`, `tools/` and `docs/`
-are original.
+button and every value in `MIDI_Map.py` are this project's. `MVave_SMC_KNOBS/`,
+`MVave_SMC_STEPSEQ/`, `tools/` and `docs/` are original — bar each package's
+three-line `__init__.py`, which is the template's boilerplate with the names
+changed, footer included.
 [DEVELOPMENT.md](docs/DEVELOPMENT.md) carries a file-by-file provenance table.
 
 Not affiliated with or endorsed by Ableton, M-Vave/Cuvave, Novation or Focusrite.
@@ -159,7 +167,8 @@ their owners and are used here descriptively.
 ## Licence
 
 **Not yet chosen.** `MVave_SMC_KNOBS/`, `MVave_SMC_STEPSEQ/`, `tools/` and
-`docs/` are original work. `MVave_SMC_PAD/` is not, and what it inherits comes
+`docs/` are original work (bar the two `__init__.py` entry points, which are the
+template's boilerplate with the names changed). `MVave_SMC_PAD/` is not, and what it inherits comes
 from **three** upstreams, not one. All three ship, deliberately — the point of
 listing them here is that a reader can see exactly what they are getting:
 

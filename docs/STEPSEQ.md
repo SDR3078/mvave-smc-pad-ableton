@@ -33,6 +33,7 @@ this file is what got built and section 4 says why.
 | MOD + `<` `>` | **bank the lane picker by 16 pitches** | same |
 | stop button | switch view | switch view |
 | play button | start/stop Live's transport | same |
+| Knob CC 20–23 | **unreachable on this hardware — see below** | same |
 
 **Three of the five buttons show state on their own LEDs** — play lit while the
 transport runs, the view button lit while you are in overview, the modifier lit
@@ -46,7 +47,6 @@ is what this is for. `BUTTON_LEDS = False` in `MIDI_Map.py` turns it off again.
 Whether the button LEDs take the pad palette or are simply on/off is unmeasured —
 `BTN_LED_ON` is a velocity either way, so pick from the palette in
 [HARDWARE.md](HARDWARE.md) 3.2 if they turn out to be colour capable.
-| Knob CC 20–23 | **unreachable on this hardware — see below** | same |
 
 **The window follows the playhead.** The sixteen pads show the sixteen steps
 being played, so a 16, 32 or 64-step loop needs no paging at all.
@@ -267,8 +267,13 @@ while MOD, the view toggle and both arrows stayed dead and drove the launcher's
 transport instead. `reference/sequencer.spc` **is** that preset, if your editor
 can load one. Give it:
 
-- the same **port-3 setting** the clip-launcher bank has — in the `.spc` this is
-  the flag byte `0x04`; the editor presents it as a mode or routing option
+- **the same assignment *type* the clip-launcher bank uses: MCP / Mackie, not
+  plain MIDI.** The type is what puts a bank on port 3 and what makes its pads
+  light from the host; a bank assigned as plain MIDI notes comes out of ports
+  1/2, is velocity-sensitive, and does not light (HARDWARE.md 5.6). In the
+  `.spc` this shows up as the flag byte `0x04`, which is most likely just the
+  MCP marker — an earlier revision of this document called it a port or routing
+  option, which is the reading HARDWARE.md 5.6 superseded on 2026-08-31.
 - **notes 101–116**, channel 1, in screen reading order
 
 The editor numbers pads **bottom-up** — its PAD1 is the bottom-left pad — so its
@@ -303,10 +308,21 @@ nothing to do and nothing is wrong. Notes 101–116 are real pitches
 near the top of the keyboard, and with Track on and a track armed, every step you
 toggle also plays a note through that instrument.
 
-Live's `Log.txt` is the only debugger — the script logs a line on load naming
-the channels and notes it is listening for, and logs any message it receives
-that `MIDI_Map.py` does not describe, exactly once per signature. That last one is
-the fastest answer to "what is this thing actually sending?".
+Live's `Log.txt` is the only debugger inside Live. On load the script prints
+what it is listening for, verbatim:
+
+```
+MVave_SMC_STEPSEQ: loaded. pads ch 1 notes 101-116, buttons ch 1 notes 117-121.
+```
+
+It also logs anything it receives that `MIDI_Map.py` does not describe, once per
+signature — but **do not use that to find out what your unit sends.**
+`build_midi_map` forwards exactly the set `_dispatch` claims, and under Live's
+forward-only routing nothing else is ever delivered, so a preset sending the
+wrong notes produces no `unmapped:` line at all: the pads simply do nothing.
+`docs/DEVELOPMENT.md` records the same conclusion from a hardware session. For
+"what is this thing actually sending?", use `tools/mvave_probe.py --listen`,
+which reads the port directly.
 
 ## 7. The self-test
 

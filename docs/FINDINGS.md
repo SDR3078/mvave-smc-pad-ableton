@@ -133,9 +133,14 @@ extra code to make it announce itself.
 Recorded rather than quietly dropped:
 
 - **The `.spc` flag byte as a port selector.** Pad records in the hand-edited
-  bank carry `0x04` and appear on port 3; encoder records carry `0x00` and appear
-  on ports 1 and 2. Two independent observations, consistent, never proven.
-  Testable by switching presets and seeing which port receives.
+  bank carry flag `0x04` and appear on port 3; encoder records carry flag `0x03`
+  and appear on ports 1 and 2. (An earlier revision of this bullet said the
+  encoder flag was `0x00` — that is the *third* byte of the record, a different
+  field. All 32 encoder records across both shipped presets read
+  `03 02 00 <cc> 3f 41`.) Two observations, consistent, never proven — and
+  **superseded** by [HARDWARE.md](HARDWARE.md) 5.6, which argues the port
+  follows the assignment *type* rather than any flag, and where the confirming
+  experiment is still unrun.
 - **What VELOCITY 1–4 change.** All four transmit velocity 127 on the DAW port
   and none affect LED colour. What they *do* affect was never established,
   because the port a velocity curve would shape transmitted nothing in the bank

@@ -22,9 +22,11 @@ move the red box, so **both must be installed and both slots filled**.
 
 Two known `_Framework` differences across Live versions are already handled in
 the code: missing `ClipSlotComponent` colour setters degrade to plain clip
-launching with a warning in the log, and the `set_parameter_controls` assert that
-demands exactly 8 controls is satisfied by padding with CCs the device never
-sends.
+launching with a warning in the log, and the `set_parameter_controls` assert
+that demands exactly 8 controls is sidestepped entirely — the pad script calls
+that setter only when all eight slots are assigned (they are not, so it never
+does), and the knob script writes `device.parameters[...]` directly and never
+calls it at all.
 
 ### What the scripts expect the device to send
 
@@ -44,19 +46,59 @@ assignments had been switched there from absolute to relative. **A factory unit
 will not match**, and neither will this one after any further editor change — the
 encoder numbering has already moved once between measurements. Re-measure with
 `run_probe.bat --knobs` rather than trusting the table above.
-On the measured unit, the eight Shift+Pad presets transmitted note ranges
-1) 4–19, 2) 20–35, 3) 1–16 (the hand-edited one), 4) 52–67, 5) 68–83, 6) 84–99,
-7) 100–115, 8) 52–67.
+On the measured unit, the eight **PAD BANK** positions of one preset transmitted
+note ranges 1) 4–19, 2) 20–35, 3) 1–16 (the hand-edited one), 4) 52–67,
+5) 68–83, 6) 84–99, 7) 100–115, 8) 52–67. **PAD BANK** cycles those eight banks
+*within* the loaded preset; **Shift+Pad** loads a different preset file
+altogether. The two are easy to confuse and the consequences differ — see
+[HARDWARE.md](HARDWARE.md) §5.
 
-**The two presets in `reference/` are this state, exported.** `launchpad.spc` is
-the clip-launcher preset and `sequencer.spc` the step-sequencer one; if your
-M-Vave editor can load a `.spc`, that is the shortest route. If it cannot, they
-are still worth decoding as the authoritative answer to what the numbers should
-be — `docs/HARDWARE.md` §5 has the format. Configuring by hand, note the one
-gotcha that makes it silently wrong: **the editor numbers pads bottom-up**, so
-its PAD1 is the bottom-left pad and PAD13–16 carry the first four notes
-(HARDWARE.md 5.3). The five buttons are one set per preset, not per pad bank
-(HARDWARE.md 2.4).
+**You need M-Vave's editor to do any of this.** The configuration lives on the
+device, not in these scripts, and the editor is the only thing that writes it.
+
+For the SMC-PAD that editor is **MidiSuite**, from
+[m-vave.com/appdownload](https://www.m-vave.com/appdownload) — desktop builds
+for **Windows and macOS**, which connect to the unit over the USB data cable,
+plus iOS and Android versions. Checked 2026-09-06: the SMC-PAD is listed among
+MidiSuite's supported devices.
+
+> **Not CubeSuite.** M-Vave ships a second editor of that name for a different
+> part of their range (LooperPro, SMK25, VMK25 and so on) and the SMC-PAD is
+> **not** in its device list. `docs/STEPSEQ-BRIEF.md`, the original build brief
+> kept verbatim as history, names CubeSuite — it predates the device being
+> identified and is wrong on this point. MidiSuite is the one.
+
+Nothing in this repository ships, mirrors or depends on the editor, and none of
+what follows has been tested against any particular version of it.
+
+**The two presets in `reference/` are this project's configuration, exported.**
+`launchpad.spc` is the clip-launcher preset and `sequencer.spc` the
+step-sequencer one. If your build of MidiSuite can load a `.spc`, load each into
+its own preset slot and write it to the device — by far the shortest route. If
+it cannot, configure by hand from the table above; `docs/HARDWARE.md` §5 decodes
+the format byte by byte, so the files remain the authoritative answer to what
+every number should be.
+
+Configuring by hand, two gotchas make it silently wrong:
+
+- **The editor numbers pads bottom-up**, so its PAD1 is the bottom-left pad and
+  PAD13–16 carry the first four notes (HARDWARE.md 5.3).
+- **The five buttons are one set per preset**, not per pad bank (HARDWARE.md
+  2.4) — so they cannot be given different jobs in different PAD BANK positions.
+
+> **Which preset slot?** It makes no difference to the scripts: the *note
+> ranges* are what tell the two apart, not the slot. What matters is that the
+> two presets sit in **different** slots so you can switch between them. Hold
+> **Shift** and press a pad to load a slot — that is the "preset switch" the
+> rest of these docs and [STEPSEQ.md](STEPSEQ.md) mean by the mode switch.
+> Write down which pad you used for which preset; nothing on the device tells
+> you afterwards.
+
+**Confirm it took** before going anywhere near Live: run
+`run_probe.bat --listen` (see [PROBE.md](PROBE.md) for setup) and press the
+pads. The launcher preset sends notes 1–16, the sequencer preset 101–116. A
+factory unit sends neither, which is exactly the "appears to do nothing" state
+the README warns about.
 
 So before you start, either configure the device in the M-Vave editor to match
 the table, or change the numbers in `MIDI_Map.py` to match your device — see
@@ -81,8 +123,17 @@ run_probe.bat --knobs  --port "SMC-PAD 0"       # map every encoder to its CC, o
 run_probe.bat --clear  --port "MIDIOUT3"        # extinguish every pad
 ```
 
-The `.bat` is Windows-only and builds its own venv on first run; on macOS run
-`mvave_probe.py` directly against `mido` and `python-rtmidi` (untested).
+The `.bat` is Windows-only and builds its own venv on first run. On macOS and
+Linux there is no launcher — set the probe up once, then call it directly:
+
+```
+python3 -m venv venv-midi
+./venv-midi/bin/pip install -r tools/requirements-midi.txt
+./venv-midi/bin/python tools/mvave_probe.py --list
+```
+
+Full setup and every mode is in **[PROBE.md](PROBE.md)**. (Untested on macOS —
+the commands are standard, the device behaviour is not verified there.)
 Port names need the trailing index to disambiguate, because `SMC-PAD` is a
 substring of all three Windows port names — use `"SMC-PAD 0"`.
 
@@ -152,11 +203,8 @@ order does not matter; the numbering below is just for reference.
 > what keep the two apart, so both can stay loaded and the pad preset switch is
 > the mode switch. Setup is in [STEPSEQ.md](STEPSEQ.md) §6.
 >
-> **(superseded note kept for context)** `MVave_SMC_STEPSEQ` turns a second
-> pad preset into a Push-style step sequencer. Which port it wants depends on a
-> measurement nobody has made yet, and there are two possible shapes —
-> [STEPSEQ.md](STEPSEQ.md) section 6 has both. Skip it entirely if you only want
-> the clip launcher; nothing here depends on it.
+> Skip it entirely if you only want the clip launcher — nothing else here
+> depends on it.
 
 ### 4. Leave the remaining port unassigned, with Remote on
 
@@ -177,8 +225,11 @@ script is **not** using.
 > **Check which port the script actually holds.** Ports 1 and 2 carry
 > identical CCs, so either works for the script and the other is left for
 > Ctrl+M — but the docs and your Live preferences can drift apart. The
-> `Midi Remote Scripts` block at the top of `Log.txt` names the input each
-> slot is on; use that, not this table, when remaking mappings.
+> **last** `Midi Remote Scripts` block in `Log.txt` names the input each slot is
+> on. Live appends one block per launch, so scroll to the *bottom* of the file:
+> the block at the top is the first session ever recorded, and following it
+> sends you to remake mappings onto the port the script currently holds — the
+> exact failure §4 exists to prevent.
 
 ### 5. Both knob banks are in use
 
@@ -286,8 +337,10 @@ the Shift+Pad combos. There is no spare modifier on this device.
 ### Pads work but the macro knobs do nothing
 
 - **You are on the other knob bank.** KNOB BANK switches all eight encoders at
-  once and the two banks carry different macros; a mapping made on one is inert
-  while the other is selected. Press KNOB BANK and try again.
+  once and the two banks carry different macros, so a knob you expect to move
+  macro 3 moves macro 11 instead. Note that this makes a knob move the *wrong*
+  thing, not nothing — see *One knob appears dead* below if it does nothing at
+  all.
 - **The device has fewer macros than the knob you turned.** Bank 2's top six are
   macros 9–14, which an eight-macro rack simply does not have. `Log.txt` names
   the device and the macro, once.
@@ -323,7 +376,8 @@ and you do **not** need to close Live; CoreMIDI and ALSA ports are multi-client.
 **The wrong knob bank moves a _different_ macro, not nothing.** Both banks are
 mapped now, so a knob that does nothing at all is a different fault: check the
 device's macro count (a rack with eight macros has nothing for bank 2's top six
-to drive — `Log.txt` says so once per device), then `run_probe.bat --knobs`.
+to drive — `Log.txt` names the device and the macro, once per pair, so a
+six-knob shortfall is six lines), then `run_probe.bat --knobs`.
 Historically, when one bank was unassigned, the wrong bank *was* the usual
 cause.
 
@@ -332,6 +386,14 @@ If it is dead on bank 2 as well, its CC may not match the map — verify with
 knobs and CC clashes.
 
 ### The session box jumps to one end when you turn bank 2's encoder 1 or 2
+
+- **`ENCODER_MODE` is set to the wrong convention.** If the encoder is already
+  relative in the editor and the box still slams to one end, it is sending the
+  other relative convention: one click decodes as ±63. Set
+  `ENCODER_MODE = 'twos'` in `MVave_SMC_KNOBS/MVave_SMC_KNOBS.py` (or back to
+  `'centre'`) and restart Live. `run_probe.bat --knobs` names which one your
+  unit sends.
+- **Or the encoder is still absolute** — the original cause, below.
 
 That encoder is still **absolute**. It transmits a position, not a step, so the
 first message after the box has moved by any other means slams it to wherever the
@@ -410,7 +472,9 @@ tell apart in use, move `CLIP_STOPPED` to 21 or 24 for much more contrast.
 
 The encoder CCs are constants at the top:
 
-- `MACRO_BY_CC` — a dict mapping each of the fourteen CCs to a macro number.
+- `MACRO_BY_CC` — a dict mapping each of the sixteen CCs to a macro number
+  (fourteen macro knobs on the launcher preset, plus 15–16 on the sequencer
+  preset).
   Macro *N* is `device.parameters[N]`; index 0 is the device on/off switch, so the
   numbering needs no offset. Build it in **encoder order**, not numeric CC order,
   or the macros scatter across the panel.
@@ -418,7 +482,13 @@ The encoder CCs are constants at the top:
   range. A rack macro runs 0–127, a range of 127, so one click is one unit and a
   full sweep is 127 clicks.
 - `CC_TRACK = 17`, `CC_SCENE = 18`, `CENTRE = 64` — the relative navigation
-  encoders (bank 2's bottom pair, launcher preset).
+  encoders (bank 2's bottom pair, launcher preset). The two CCs must differ; a
+  collision makes one axis of the session box unreachable.
+- `ENCODER_MODE = 'centre'` — **which relative convention your encoders use.**
+  `'centre'` is 63 back / 65 forward (what this unit sends); `'twos'` is 127
+  back / 1 forward. The two are mutually ambiguous, so nothing can detect it —
+  it is a setting. `run_probe.bat --knobs` reports which one it saw, in those
+  words. Getting it wrong moves the session box 63 tracks per click, silently.
 
 ### One editing gotcha
 
