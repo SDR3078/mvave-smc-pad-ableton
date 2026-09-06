@@ -16,8 +16,13 @@ set "STAMP=%VENV%\.deps-ok"
 if not exist "%PY%" (
     echo Creating virtual environment in "%VENV%" ...
     rmdir /s /q "%VENV%" 2>nul
-    python -m venv "%VENV%"
-    if errorlevel 1 goto :nopython
+    REM py.exe first. The python.org Windows installer leaves "Add python.exe
+    REM to PATH" unchecked by default but always installs the launcher, so on a
+    REM very ordinary machine "py -3" works while bare "python" reaches the
+    REM Microsoft Store alias stub and exits non-zero. Trying only "python"
+    REM told those users to install a Python they already had.
+    py -3 -m venv "%VENV%" 2>nul
+    if not exist "%PY%" python -m venv "%VENV%" 2>nul
     if not exist "%PY%" goto :nopython
 )
 
@@ -58,7 +63,9 @@ exit /b 1
 :nopython
 echo.
 echo Could not create the virtual environment in "%VENV%".
-echo Is real Python installed and on PATH?  Try:  python --version
+echo Neither "py -3" nor "python" could do it, so no real Python was found.
+echo Try:   py -3 --version     and     python --version
+echo (The Microsoft Store alias stub answers "python" but is not enough.)
 pause
 exit /b 1
 

@@ -1,7 +1,12 @@
 # Dependencies for mvave_probe.py, installed into venv-midi by run_probe.bat.
 # Installed into its own virtualenv so it cannot disturb any other virtualenv in
 # the project -- see docs/PROBE.md, Setup.
-# Known-good against Python 3.7-3.12 on Windows and Linux. The probe uses only
+# Known-good against Python 3.8-3.12 on Windows and Linux. NOT 3.7: the pinned
+# python-rtmidi declares Requires-Python >=3.8, so pip refuses outright and
+# run_probe.bat reports it as a download failure. (mido 1.3.2 is ~=3.7 and
+# would be fine; rtmidi is the constraint.) The Remote Scripts themselves
+# still target Live's 3.7 interpreter -- that floor is unrelated to this tool.
+# The probe uses only
 # a small, stable slice of mido: get_input_names/get_output_names, open_input/
 # open_output, Message, and port.iter_pending/send/close/name. Licences are not
 # vendored here -- neither package is redistributed; run_probe.bat installs them

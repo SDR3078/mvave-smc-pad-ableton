@@ -150,6 +150,7 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         self._playhead = None
         self._unhandled = set()
         self._exceptions_logged = set()
+        self._logged_no_extended = False
         self._missing_listeners = []
         self._pads = {}
         for index, note in enumerate(PAD_NOTES):
@@ -157,7 +158,8 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         for index, note in enumerate(PAD_NOTES_B):
             self._pads[note] = index
         self._buttons = tuple(n for n in (BTN_PLAY, BTN_VIEW, BTN_MOD,
-                                          BTN_LEFT, BTN_RIGHT) if n is not None)
+                                          BTN_LEFT, BTN_RIGHT)
+                                if n is not None and n >= 0)
 
         ControlSurface.__init__(self, c_instance)
         with self.component_guard():
@@ -349,8 +351,15 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         if clip is not None and not hasattr(clip, 'get_notes_extended'):
             # Live 10 and older. Announce it rather than rendering an empty
             # grid forever and leaving the user to guess.
-            self._log('this Live has no get_notes_extended() -- Live 11 or '
-                      'newer is required. Running with no clip bound.')
+            # Latched: _rebind() is reached from a listener registered on both
+            # selected_track and detail_clip, so one click can call it twice.
+            # On the Live 10 host this line exists to warn, clicking around --
+            # the user's first response to "the pads do nothing" -- is exactly
+            # what would bury it.
+            if not self._logged_no_extended:
+                self._logged_no_extended = True
+                self._log('this Live has no get_notes_extended() -- Live 11 or '
+                          'newer is required. Running with no clip bound.')
             clip = None
 
         if clip is not None:
@@ -484,7 +493,7 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         elif cc == CC_VELOCITY:
             self._paint_velocity = _clamp(self._paint_velocity + delta, 1, 127)
         elif cc == CC_LENGTH:
-            self._set_length(self._step_count() + delta)
+            self._set_length(self._loop_steps() + delta)
         elif cc == CC_SPARE:
             pass                            # reserved: nudge/swing later
 
@@ -551,11 +560,29 @@ class MVave_SMC_STEPSEQ(ControlSurface):
             song.start_playing()
         self._paint_buttons()
 
+    def _loop_steps(self):
+        """The loop's true length in steps, unclamped.
+
+        _step_count() is the VIEW ceiling and stops at STEPS_MAX. Feeding that
+        back to _set_length as if it were the current length turned one click
+        into a truncation on any loop longer than STEPS_MAX steps: a 128-beat
+        loop became 64, in either direction, silently, dragging the clip's end
+        marker in with it.
+        """
+        clip = self._clip
+        if clip is None:
+            return 0
+        return max(0, step_at(clip.loop_end - 1e-9, clip.loop_start) + 1)
+
     def _set_length(self, steps):
         clip = self._clip
         if clip is None:
             return
-        end = clip.loop_start + _clamp(steps, 1, STEPS_MAX) * STEP
+        # Ceiling is the larger of the view limit and the loop's real length,
+        # so the knob can shorten a long loop step by step but can never
+        # shorten one merely because it is longer than the grid can show.
+        end = clip.loop_start + _clamp(steps, 1, max(STEPS_MAX,
+                                                     self._loop_steps())) * STEP
         try:
             # The end marker has to stay at or past the loop end at every
             # intermediate point, so growing moves the marker first and
@@ -799,8 +826,15 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         # message) rather than on `where` alone, so a later, different fault in
         # the same place is still heard. Capped like _unhandled so a fault whose
         # message varies every time cannot fill Log.txt either.
+        # Keyed on the deepest frame as well as the exception line, matching
+        # MVave_SMC_KNOBS: `where` is coarse -- receive_midi covers pads,
+        # buttons and knobs -- so a key without the frame silently discards
+        # whichever subsystem failed second.
         text = traceback.format_exc()
-        signature = (where, text.strip().rsplit('\n', 1)[-1])
+        lines = text.strip().split('\n')
+        frame = next((l.strip() for l in reversed(lines)
+                      if l.strip().startswith('File "')), '')
+        signature = (where, frame, lines[-1])
         if signature in self._exceptions_logged or len(self._exceptions_logged) >= 32:
             return
         self._exceptions_logged.add(signature)

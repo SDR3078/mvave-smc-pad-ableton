@@ -75,16 +75,20 @@ class SpecialTransportComponent(TransportComponent):
             if self._quant_toggle_button != None:
                 self._quant_toggle_button.add_value_listener(self._quant_toggle_value)
 
-            # _on_quantisation_changed, not update(): _quant_toggle_button is
-            # this subclass's own, so no update() in the base chain can light
-            # it, and the override that would have is commented out below. It
-            # otherwise boots dark while Live's quantisation defaults to on, so
-            # the first press reads as "turn on" and actually turns it off.
-            self._on_quantisation_changed()
             self.update()
         return None
 
-    #def update(self):
+    def update(self):
+        # _quant_toggle_button is this subclass's own, so TransportComponent's
+        # update() redraws every LED the base owns and leaves this one alone.
+        # Lighting it once at bind time was not enough: refresh_state() clears
+        # the send cache, so the quant pad went dark on the next refresh while
+        # play/stop/record came back. Anything that redraws the transport now
+        # redraws this too -- including the bind, which calls update() below.
+        TransportComponent.update(self)
+        self._on_quantisation_changed()
+
+    #def _update_from_the_template(self):
         #self._on_metronome_changed()
         #self._on_overdub_changed()
         #self._on_quantisation_changed()

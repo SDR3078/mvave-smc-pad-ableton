@@ -106,7 +106,7 @@ BTN_RIGHT = 121             # next step page;     +MOD lane bank up
 KNOB_CHANNEL = 15
 CC_LANE = 20                # focus: scroll lane. overview: scroll lane window.
 CC_VELOCITY = 21            # paint velocity, 1-127
-CC_LENGTH = 22              # pattern length in steps, 1-32
+CC_LENGTH = 22              # pattern length in steps, 1-STEPS_MAX (see below)
 CC_SPARE = 23               # reserved: nudge/swing later. Read and ignored.
 
 # How a relative encoder encodes one click.

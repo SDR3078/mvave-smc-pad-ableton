@@ -247,8 +247,9 @@ class MVave_SMC_KNOBS(ControlSurface):
         if macro >= len(params):
             # Not an error: a device with fewer macros than knobs is normal.
             # Logged once per device+macro so a small rack cannot flood the log.
-            self._log_once('"%s" exposes %d parameter(s); the macro-%d knob does nothing'
-                           % (device.name, max(0, len(params) - 1), macro))
+            self._log_once('"%s" exposes %d macro(s); the macro-%d knob does nothing'
+                           % (device.name, max(0, len(params) - 1), macro),
+                           key=(id(device), macro))
             return
         param = params[macro]
         if not param.is_enabled:
@@ -323,7 +324,7 @@ class MVave_SMC_KNOBS(ControlSurface):
         try:
             from MVave_SMC_PAD.MVave_SMC_PAD import MVave_SMC_PAD
         except Exception as exc:
-            self._log_once('cannot import MVave_SMC_PAD (%s)' % exc)
+            self._log_once('cannot import MVave_SMC_PAD (%s)' % type(exc).__name__)
             return None
         instances = getattr(MVave_SMC_PAD, '_active_instances', None) or []
         if not instances:
@@ -331,12 +332,23 @@ class MVave_SMC_KNOBS(ControlSurface):
             return None
         return getattr(instances[0], '_session', None)
 
-    def _log_once(self, message):
+    def _log_once(self, message, key=None):
         # Keyed on the message rather than a single flag, so a later distinct
-        # problem is not hidden by an earlier one.
-        if message not in self._logged:
-            self._logged.add(message)
-            self.log_message('MVave_SMC_KNOBS: ' + message)
+        # problem is not hidden by an earlier one -- or on an explicit key when
+        # the message interpolates text that repeats across genuinely different
+        # causes. Two racks both called "Audio Effect Rack" (Live's default) are
+        # two devices and one string, so without a key the second one's dead
+        # knobs are never reported and the troubleshooting step reads
+        # "no line, so not this cause", which is wrong.
+        #
+        # Capped like _log_exception: a caller that interpolates a message
+        # varying per occurrence must not be able to grow this set without
+        # bound. _pad_session() runs on every navigation click.
+        signature = message if key is None else key
+        if signature in self._logged or len(self._logged) >= 32:
+            return
+        self._logged.add(signature)
+        self.log_message('MVave_SMC_KNOBS: ' + message)
 
     def _log_exception(self, where):
         # Keyed on the last traceback line -- the exception type and message --

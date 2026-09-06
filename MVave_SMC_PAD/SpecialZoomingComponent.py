@@ -4,6 +4,25 @@
 import Live
 from _Framework.SessionZoomingComponent import SessionZoomingComponent
 from _Framework.ButtonElement import ButtonElement
+def _probe(session, method_name, attr_name):
+    """Read a SessionComponent value across both framework spellings.
+
+    The same dance MVave_SMC_KNOBS._probe_value does, for the same four getters
+    on the same object. They are methods on the vintage verified in Live
+    11.3.43, but ZOOMUP/DOWN/LEFT/RIGHT are user-assignable (MIDI_Map.py), and
+    on a framework where these are plain attributes, calling one would raise
+    TypeError inside a button callback -- taking the whole pad script down from
+    a one-line map edit.
+    """
+    missing = object()
+    value = getattr(session, method_name, missing)
+    if value is not missing:
+        return value() if callable(value) else value
+    value = getattr(session, attr_name, missing)
+    if value is not missing:
+        return value
+    return 0
+
 class SpecialZoomingComponent(SessionZoomingComponent):
     ' Special ZoomingComponent that uses clip stop buttons for stop all when zoomed '
     __module__ = __name__
@@ -14,9 +33,9 @@ class SpecialZoomingComponent(SessionZoomingComponent):
 
     def _scroll_up(self):
         #if self._is_zoomed_out:
-        height       = self._session.height()
-        track_offset = self._session.track_offset()
-        scene_offset = self._session.scene_offset()
+        height       = _probe(self._session, 'height', '_num_scenes')
+        track_offset = _probe(self._session, 'track_offset', '_track_offset')
+        scene_offset = _probe(self._session, 'scene_offset', '_scene_offset')
 
         if scene_offset > 0:
             new_scene_offset = scene_offset
@@ -28,9 +47,9 @@ class SpecialZoomingComponent(SessionZoomingComponent):
 
     def _scroll_down(self):
         #if self._is_zoomed_out:
-            height       = self._session.height()
-            track_offset = self._session.track_offset()
-            scene_offset = self._session.scene_offset()
+            height       = _probe(self._session, 'height', '_num_scenes')
+            track_offset = _probe(self._session, 'track_offset', '_track_offset')
+            scene_offset = _probe(self._session, 'scene_offset', '_scene_offset')
             new_scene_offset = scene_offset + height - (scene_offset % height)
             # Clamped. The up/left twins are guarded with "> 0"; these two had
             # no ceiling at all, so with 10 scenes and a 4-high box the third
@@ -42,9 +61,9 @@ class SpecialZoomingComponent(SessionZoomingComponent):
 
     def _scroll_left(self):
         #if self._is_zoomed_out:
-        width        = self._session.width()
-        track_offset = self._session.track_offset()
-        scene_offset = self._session.scene_offset()
+        width        = _probe(self._session, 'width', '_num_tracks')
+        track_offset = _probe(self._session, 'track_offset', '_track_offset')
+        scene_offset = _probe(self._session, 'scene_offset', '_scene_offset')
         if track_offset > 0:
             new_track_offset = track_offset
             if track_offset % width > 0:
@@ -55,9 +74,9 @@ class SpecialZoomingComponent(SessionZoomingComponent):
 
     def _scroll_right(self):
         #if self._is_zoomed_out:
-        width        = self._session.width()
-        track_offset = self._session.track_offset()
-        scene_offset = self._session.scene_offset()
+        width        = _probe(self._session, 'width', '_num_tracks')
+        track_offset = _probe(self._session, 'track_offset', '_track_offset')
+        scene_offset = _probe(self._session, 'scene_offset', '_scene_offset')
         new_track_offset = track_offset + width - (track_offset % width)
         # Clamped, as in _scroll_down. Track count from visible_tracks with a
         # fallback, matching MVave_SMC_KNOBS._bank -- whether SessionComponent

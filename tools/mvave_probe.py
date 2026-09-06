@@ -24,7 +24,23 @@ import argparse
 import sys
 import time
 
-import mido
+try:
+    import mido
+except ImportError:                                 # pragma: no cover
+    # Deliberately not deferred to main(): every mode needs mido, and a bare
+    # ModuleNotFoundError names no remedy. --help needs no MIDI stack at all,
+    # so say what to run instead of printing a traceback at the first thing
+    # anyone types.
+    sys.exit("mido is not installed.\n"
+             "  Windows: run tools\\run_probe.bat, which builds its own venv.\n"
+             "  macOS/Linux: python3 -m venv venv-midi && "
+             "./venv-midi/bin/pip install -r tools/requirements-midi.txt")
+
+# Relative encoders centre on 64: 63 is one step back, 65 one step forward.
+# The other convention in the wild is two's complement (127 back, 1 forward).
+# Both are reported by name -- they are the two values of ENCODER_MODE in
+# MVave_SMC_KNOBS.py.
+CENTRE_VALUE = 64
 
 # The SMC-PAD's generic preset and its Mackie/DAW mode both sit on MIDI
 # channel 1. Channel is 1-16 on the command line, 0-15 on the wire.
@@ -322,10 +338,19 @@ def _classify(values):
     distinct = sorted(set(values))
     if not distinct:
         return "-"
-    if set(distinct) <= set([63, 64, 65]):
-        return "relative"
-    if set(distinct) <= set([1, 127]) or set(distinct) <= set([1, 64, 127]):
-        return "relative"
+    # The two conventions are reported separately because they are exactly the
+    # two values of ENCODER_MODE in MVave_SMC_KNOBS.py -- collapsing them to
+    # one word threw away the only thing this mode exists to determine, and
+    # feeding the wrong one to the session box moves it 63 tracks per click,
+    # silently.
+    #
+    # Clustered rather than exact: an encoder that accelerates, or a poll that
+    # catches two ticks at once, emits 2/126 or 62/66 -- which the old exact
+    # sets called "absolute", the one answer that wires it up wrong.
+    if distinct and all(abs(v - CENTRE_VALUE) <= 8 for v in distinct):
+        return "relative (centre)"
+    if distinct and all(v <= 8 or v >= 120 for v in distinct):
+        return "relative (twos)"
     if len(distinct) <= 3:
         return "relative?"
     return "absolute"

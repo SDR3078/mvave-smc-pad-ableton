@@ -25,6 +25,10 @@ class DetailViewControllerComponent(ControlSurfaceComponent):
         return None
 
     def disconnect(self):
+        # Chained first, like the other Special* components: without it the
+        # base class's own teardown (subject slots, parent reference) never
+        # runs on a script reload.
+        ControlSurfaceComponent.disconnect(self)
         self._unregister_timer_callback(self._on_timer)
         self.application().view.remove_is_view_visible_listener('Detail', self._detail_view_visibility_changed)
         if self._device_clip_toggle_button != None:
@@ -35,10 +39,11 @@ class DetailViewControllerComponent(ControlSurfaceComponent):
             self._detail_toggle_button = None
         if self._left_button != None:
             self._left_button.remove_value_listener(self._nav_value)
-            self._left_button = None
-        if self._right_button != None:
+        # Guarded against the two being one object -- see set_device_nav_buttons.
+        if self._right_button != None and self._right_button is not self._left_button:
             self._right_button.remove_value_listener(self._nav_value)
-            self._right_button = None
+        self._left_button = None
+        self._right_button = None
         #if self._shift_button != None:
             #self._shift_button.remove_value_listener(self._shift_value)
             #self._shift_button = None
@@ -80,15 +85,22 @@ class DetailViewControllerComponent(ControlSurfaceComponent):
             isinstance(right_button, ButtonElement)
             raise AssertionError
         identify_sender = True
+        # _note_map returns ONE ButtonElement per note, so equal DEVICENAV*
+        # constants make left and right the same object. Two DIFFERENT
+        # callbacks on one button is the template's supported idiom (PLAY =
+        # STOP = 17 loads fine); the SAME callback twice is not -- it would
+        # double-add here and double-remove in disconnect(). Skip the duplicate
+        # on both sides.
+        previous_left = self._left_button
         if self._left_button != None:
             self._left_button.remove_value_listener(self._nav_value)
         self._left_button = left_button
         if self._left_button != None:
             self._left_button.add_value_listener(self._nav_value, identify_sender)
-        if self._right_button != None:
+        if self._right_button != None and self._right_button is not previous_left:
             self._right_button.remove_value_listener(self._nav_value)
         self._right_button = right_button
-        if self._right_button != None:
+        if self._right_button != None and self._right_button is not self._left_button:
             self._right_button.add_value_listener(self._nav_value, identify_sender)
 
         self.update()

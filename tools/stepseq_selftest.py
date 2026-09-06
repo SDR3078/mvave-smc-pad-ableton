@@ -37,6 +37,7 @@ whichever of these is wrong, so they are listed rather than buried:
     session has yet deleted a clip while the sequencer held it.
 """
 
+import ast
 import contextlib
 import os
 import sys
@@ -214,7 +215,11 @@ class FakeView(FakeListenable):
     def __init__(self):
         FakeListenable.__init__(self)
         self.detail_clip = None
-        self.selected_track = object()
+        self.selected_track = FakeTrack()
+        self.selected_device = None
+
+    def select_device(self, device):
+        self.selected_device = device
 
     def select(self, clip):
         self.detail_clip = clip
@@ -239,10 +244,59 @@ class FakeView(FakeListenable):
         return self._has('track', cb)
 
 
+class FakeTrack(object):
+    """Enough of a track for _follow_selected_track to walk it."""
+
+    def __init__(self, devices=()):
+        self.devices = list(devices)
+        self.view = FakeTrackView(self.devices[0] if self.devices else None)
+
+
+class FakeTrackView(object):
+    def __init__(self, selected_device=None):
+        self.selected_device = selected_device
+
+
+class FakeSession(object):
+    """The launcher's session box, as MVave_SMC_KNOBS._bank() reads it.
+
+    Method-spelled, which is the spelling verified on Live 11.3.43; the
+    attribute spelling is exercised separately through _fake_component.
+    """
+
+    def __init__(self, width=4, height=4):
+        self._width, self._height = width, height
+        self._track_offset = self._scene_offset = 0
+        self.offsets = []
+
+    def width(self):
+        return self._width
+
+    def height(self):
+        return self._height
+
+    def track_offset(self):
+        return self._track_offset
+
+    def scene_offset(self):
+        return self._scene_offset
+
+    def set_offsets(self, track_offset, scene_offset):
+        # Live's own setter asserts on a negative offset, and an assert inside
+        # a MIDI callback takes the script down mid-jam. Mirror that.
+        assert track_offset >= 0, 'negative track offset %r' % track_offset
+        assert scene_offset >= 0, 'negative scene offset %r' % scene_offset
+        self._track_offset, self._scene_offset = track_offset, scene_offset
+        self.offsets.append((track_offset, scene_offset))
+
+
 class FakeSong(object):
     def __init__(self):
         self.view = FakeView()
         self.is_playing = False
+        self.tracks = [FakeTrack() for _ in range(8)]
+        self.visible_tracks = self.tracks
+        self.scenes = [object() for _ in range(8)]
 
     def start_playing(self):
         self.is_playing = True
@@ -379,9 +433,28 @@ KNOBS_MODULE = sys.modules['MVave_SMC_KNOBS.MVave_SMC_KNOBS']
 # ------------------------------------------------- knob-script fixtures
 
 class FakeParameter(object):
+    """A device parameter that rejects an out-of-range write, as Live's does.
+
+    Stored as a plain attribute this accepted writes the real
+    Live.DeviceParameter setter raises on, so _adjust_macro's clamp could be
+    deleted with the suite green -- and the exception that clamp exists to
+    prevent disables the whole script from inside a MIDI callback.
+    """
+
     def __init__(self, minimum, maximum, value=0.0, quantized=False):
-        self.min, self.max, self.value = minimum, maximum, value
+        self.min, self.max = minimum, maximum
         self.is_quantized, self.is_enabled = quantized, True
+        self._value = value
+
+    def _get_value(self):
+        return self._value
+
+    def _set_value(self, new):
+        if not (self.min <= new <= self.max):
+            raise RuntimeError('value %r outside [%r, %r]' % (new, self.min, self.max))
+        self._value = new
+
+    value = property(_get_value, _set_value)
 
 
 class FakeDevice(object):
@@ -706,6 +779,25 @@ class Rendering(SeqTest):
 # ------------------------------------------------------------------- playhead
 
 class Playhead(SeqTest):
+
+    def test_a_sliver_of_a_final_step_does_not_bank_the_view(self):
+        # A loop brace dragged off the grid leaves a last step holding a
+        # fraction of a step's worth of in-loop time. Chasing it banks the view
+        # there and back twice per cycle, tens of milliseconds apart, at
+        # roughly double the LED traffic -- the burst this device's MIDI input
+        # buffer does not survive (HARDWARE.md 3.5).
+        self.clip.loop_end = self.clip.loop_start + 16 * C.STEP + C.STEP / 4.0
+        self.seq.refresh_state()
+        self.clip.play(16 * C.STEP)
+        self.assertEqual(self.seq._bank, 0)
+
+    def test_a_final_step_worth_following_is_followed(self):
+        # The companion: a full step past the page boundary must still scroll,
+        # or the gate has simply broken the follower.
+        self.clip.loop_end = self.clip.loop_start + 18 * C.STEP
+        self.seq.refresh_state()
+        self.clip.play(16 * C.STEP)
+        self.assertEqual(self.seq._bank, 1)
 
     def test_playhead_marks_the_current_step(self):
         self.seq.sent = []
@@ -1242,6 +1334,115 @@ class MidiPlumbing(SeqTest):
 
 # --------------------------------------------------------------------- config
 
+class LengthKnob(SeqTest):
+    """The pattern-length encoder, on a loop longer than the grid can show."""
+
+    def test_the_length_knob_never_truncates_a_loop_it_cannot_show(self):
+        # _step_count() is the VIEW ceiling and stops at STEPS_MAX. Feeding it
+        # back as if it were the CURRENT length turned one click into a
+        # truncation on any longer loop -- 128 beats became 64, in either
+        # direction, silently, dragging the clip's end marker in with it.
+        self.clip.loop_start = 0.0
+        self.clip.loop_end = 4.0 * C.STEPS_MAX * C.STEP      # four screens
+        long_end = self.clip.loop_end
+        self.seq.handle_encoder_cc(C.CC_LENGTH, 65)          # one click up
+        self.assertGreaterEqual(self.clip.loop_end, long_end,
+                                'the knob shortened a loop it cannot address')
+        self.seq.handle_encoder_cc(C.CC_LENGTH, 63)          # one click down
+        self.assertAlmostEqual(self.clip.loop_end, long_end - C.STEP)
+
+    def test_the_length_knob_still_resizes_an_ordinary_loop(self):
+        self.clip.loop_start = 0.0
+        self.clip.loop_end = 4 * C.STEP
+        self.seq.handle_encoder_cc(C.CC_LENGTH, 65)
+        self.assertAlmostEqual(self.clip.loop_end, 5 * C.STEP)
+        self.seq.handle_encoder_cc(C.CC_LENGTH, 63)
+        self.assertAlmostEqual(self.clip.loop_end, 4 * C.STEP)
+
+
+class LogFlooding(SeqTest):
+    """The latches were pinned; the caps beside them were not.
+
+    The existing tests fire the SAME signature repeatedly, which pins the
+    latch. The cap exists for the opposite case, named in the code: "a fault
+    whose message varies every time cannot fill Log.txt either." A per-audio-
+    buffer fault with a varying message writes ~90 tracebacks a second and
+    grows an unbounded set, burying the first copy -- which is also the only
+    thing tearDown and the "no exception in any session" claim can read.
+    """
+
+    def test_the_exception_log_stops_at_the_cap(self):
+        self.expect_logged_exception = True
+        for index in range(40):
+            try:
+                raise RuntimeError('a fault whose message varies %d' % index)
+            except RuntimeError:
+                self.seq._log_exception('receive_midi')
+        lines = [l for l in self.c_instance.log if 'exception in' in l]
+        self.assertEqual(len(lines), 32, 'wrote %d lines' % len(lines))
+
+    def test_the_unmapped_log_stops_at_the_cap(self):
+        for status in range(0x90, 0x90 + 60):
+            self.seq._log_unhandled(status, 1, 1)
+        lines = [l for l in self.c_instance.log if 'unmapped' in l]
+        self.assertEqual(len(lines), 48, 'wrote %d lines' % len(lines))
+
+    def test_a_second_distinct_fault_in_one_place_is_still_heard(self):
+        # The reason the signature carries the frame as well as `where`:
+        # receive_midi covers pads, buttons and knobs, and the likeliest fault
+        # in each is the same message.
+        self.expect_logged_exception = True
+
+        def one():
+            raise RuntimeError('same message')
+
+        def two():
+            raise RuntimeError('same message')
+
+        for raiser in (one, two):
+            try:
+                raiser()
+            except RuntimeError:
+                self.seq._log_exception('receive_midi')
+        lines = [l for l in self.c_instance.log if 'exception in' in l]
+        self.assertEqual(len(lines), 2, 'the second subsystem was dropped')
+
+
+class SourceFiles(unittest.TestCase):
+    """Every shipped .py must parse, at the floor the docs claim.
+
+    The suite imports MVave_SMC_STEPSEQ and MVave_SMC_KNOBS and loads
+    MVave_SMC_PAD/MIDI_Map.py by path -- and touches nothing else in
+    MVave_SMC_PAD/. A syntax error in MVave_SMC_PAD.py or any Special*
+    component was a green run here and a silently dead control surface in
+    Live. Four review rounds ran this by hand; nothing ran it on demand.
+    """
+
+    def test_every_shipped_python_file_parses_at_the_stated_floor(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        checked = []
+        for package in ('MVave_SMC_PAD', 'MVave_SMC_KNOBS',
+                        'MVave_SMC_STEPSEQ', 'tools'):
+            directory = os.path.join(root, package)
+            for name in sorted(os.listdir(directory)):
+                if not name.endswith('.py'):
+                    continue
+                path = os.path.join(directory, name)
+                checked.append(path)
+                with open(path, 'rb') as handle:
+                    source = handle.read()
+                try:
+                    # Live 11 embeds Python 3.7. Syntax newer than that parses
+                    # fine under the interpreter running this suite and fails
+                    # only on the target, which is the whole point.
+                    ast.parse(source, path, feature_version=(3, 7))
+                except SyntaxError as exc:
+                    self.fail('%s does not parse at Python 3.7: %s' % (path, exc))
+        self.assertGreaterEqual(len(checked), 16,
+                                'expected all four directories scanned, saw %d files'
+                                % len(checked))
+
+
 class Configuration(unittest.TestCase):
     """Cheap guards on MIDI_Map.py, since a typo there is a Live restart."""
 
@@ -1326,6 +1527,34 @@ class Configuration(unittest.TestCase):
             self.assertTrue(0 <= note <= 127)
         self.assertTrue(0 <= C.PAD_CHANNEL <= 15)
         self.assertTrue(0 <= C.LED_CHANNEL <= 15)
+        # The buttons and knob CCs go straight to Live.MidiMap in
+        # build_midi_map, which is unguarded -- an illegal number there takes
+        # the surface down at load. None is the documented "unassigned" value;
+        # a negative is not, and the adapting guide used to hand out -1.
+        for name in ('BTN_PLAY', 'BTN_VIEW', 'BTN_MOD', 'BTN_LEFT', 'BTN_RIGHT'):
+            value = getattr(C, name)
+            self.assertTrue(value is None or 0 <= value <= 127,
+                            '%s = %r -- use None, not a negative' % (name, value))
+        for cc in SEQ_MODULE.KNOB_CCS:
+            self.assertTrue(0 <= cc <= 127, 'CC %r' % (cc,))
+        self.assertTrue(0 <= C.BUTTON_CHANNEL <= 15)
+        self.assertTrue(0 <= C.KNOB_CHANNEL <= 15)
+
+    def test_a_negative_button_never_reaches_the_midi_map(self):
+        # -1 is the sentinel MVave_SMC_PAD/MIDI_Map.py uses and the adapting
+        # guide once recommended here too. The LED path always skipped it; the
+        # forwarding path did not, so it arrived as note -1.
+        seqmod = SEQ_MODULE
+        original = seqmod.BTN_PLAY
+        try:
+            seqmod.BTN_PLAY = -1
+            seq = seqmod.MVave_SMC_STEPSEQ(FakeCInstance())
+            MIDI_MAP.forwarded = []
+            seq.build_midi_map('map')
+            numbers = [n for kind, ch, n in MIDI_MAP.forwarded if kind == 'note']
+            self.assertTrue(all(0 <= n <= 127 for n in numbers), numbers)
+        finally:
+            seqmod.BTN_PLAY = original
 
     def test_the_palette_only_uses_measured_colours(self):
         # Everything from 64 to 112 is one flat blue on this device, so a
@@ -1441,6 +1670,33 @@ NOT_NOTES = frozenset((
     'DRUM_PADS'))
 
 
+# NOT_NOTES exempts these from the COLLISION test, correctly -- a CC and a note
+# live in different message spaces. They are still list indexes, so the RANGE
+# test must cover them: MASTERVOLUME = 200 is an IndexError inside __init__,
+# where Live disables the whole surface silently.
+NOT_INDEXES = frozenset((
+    'BUTTONCHANNEL', 'SLIDERCHANNEL', 'MESSAGETYPE', 'PADCHANNEL',
+    'TSB_X', 'TSB_Y', 'TEMPO_TOP', 'TEMPO_BOTTOM'))
+
+
+def _launcher_indexes(pad):
+    """Every constant the launcher uses to index _note_map or _ctrl_map."""
+    out = []
+    for name in dir(pad):
+        if not name.isupper() or name in NOT_INDEXES or name.startswith('CLIP_'):
+            continue
+        value = getattr(pad, name)
+        if isinstance(value, int):
+            out.append((name, value))
+        elif isinstance(value, tuple):
+            for item in value:
+                if isinstance(item, int):
+                    out.append((name, item))
+                elif isinstance(item, tuple):
+                    out.extend((name, i) for i in item if isinstance(i, int))
+    return out
+
+
 def _launcher_notes(pad):
     """Every note constant the launcher declares, as (name, value) pairs."""
     out = []
@@ -1472,6 +1728,14 @@ class LauncherMap(unittest.TestCase):
     def setUp(self):
         self.pad = _load_launcher_map()
 
+    def test_every_indexing_constant_is_a_legal_index(self):
+        # Wider than the note test below: the CC constants are indexes too.
+        for name, value in _launcher_indexes(self.pad):
+            self.assertTrue(-1 <= value <= 127, '%s = %r' % (name, value))
+        # The session offsets are asserted >= 0 by SpecialSessionComponent.
+        for name in ('TRACK_OFFSET', 'SCENE_OFFSET'):
+            self.assertGreaterEqual(getattr(self.pad, name), -1, name)
+
     def test_every_note_constant_is_a_legal_index(self):
         # -1 is the "unassigned" sentinel; 128+ is an IndexError at load and a
         # value below -1 silently binds the wrong note from the end of the list.
@@ -1496,6 +1760,13 @@ class LauncherMap(unittest.TestCase):
         p = self.pad
         self.assertGreaterEqual(len(p.SCENELAUNCH), p.TSB_X)
         self.assertGreaterEqual(len(p.TRACKSTOP), p.TSB_Y)
+        # _scene_launch_buttons is built with range(TSB_X) and then indexed by
+        # range(TSB_Y), so TSB_X < TSB_Y is an IndexError at load that the two
+        # assertions above cannot see. The grid is square by assumption
+        # (DEVELOPMENT.md) -- pin the assumption rather than the symptom.
+        self.assertEqual(p.TSB_X, p.TSB_Y,
+                         'a non-square grid raises IndexError in '
+                         '_setup_session_control')
         for name in ('TRACKREC', 'TRACKSOLO', 'TRACKMUTE', 'TRACKSEL',
                      'TRACKVOL', 'TRACKPAN', 'TRACKSENDA', 'TRACKSENDB',
                      'TRACKSENDC', 'PARAMCONTROL', 'DEVICEBANK'):
@@ -1515,6 +1786,126 @@ class KnobScript(unittest.TestCase):
 
     def setUp(self):
         self.knobs = KNOBS_MODULE.MVave_SMC_KNOBS(FakeCInstance())
+        self.expect_logged_exception = False
+
+    def tearDown(self):
+        # The same backstop SeqTest has, and for the same reason: receive_midi
+        # swallows and logs, so a test that drives the script the way real MIDI
+        # arrives can be green while every write raised and was discarded.
+        if self.expect_logged_exception:
+            return
+        raised = [l for l in self.knobs._c_instance.log if 'exception in' in l]
+        self.assertEqual(raised, [], 'a guarded callback raised: %s' % raised)
+
+    def _with_session(self, width=4, height=4):
+        session = FakeSession(width, height)
+        self.knobs._pad_session = lambda: session
+        return session
+
+    def _turn(self, cc, value):
+        self.knobs.receive_midi((0xB0 | KNOBS_MODULE.CHANNEL, cc, value))
+
+    # ------------------------------------------------------- the MIDI path
+
+    def test_a_navigation_click_moves_the_session_box(self):
+        session = self._with_session()
+        self._turn(KNOBS_MODULE.CC_TRACK, 65)
+        self.assertEqual(session.offsets[-1], (1, 0))
+        self._turn(KNOBS_MODULE.CC_SCENE, 65)
+        self.assertEqual(session.offsets[-1], (1, 1))
+
+    def test_the_session_box_never_banks_below_zero(self):
+        # set_offsets asserts on a negative offset, and an assert inside a MIDI
+        # callback takes the whole script down mid-jam.
+        session = self._with_session()
+        for _ in range(4):
+            self._turn(KNOBS_MODULE.CC_TRACK, 63)
+        self.assertEqual(session.track_offset(), 0)
+
+    def test_every_cc_the_script_handles_is_forwarded(self):
+        # Dropping this loop leaves Live forwarding nothing: all sixteen macros
+        # and both navigation encoders go dead, with no UI evidence at all.
+        MIDI_MAP.forwarded = []
+        self.knobs.build_midi_map('map')
+        forwarded = set(MIDI_MAP.forwarded)
+        for cc in (tuple(KNOBS_MODULE.NAV_CCS)
+                   + tuple(sorted(KNOBS_MODULE.MACRO_BY_CC))):
+            self.assertIn(('cc', KNOBS_MODULE.CHANNEL, cc), forwarded)
+
+    def test_unowned_midi_goes_back_to_the_framework(self):
+        # Swallowing it is the documented silent failure in this codebase.
+        stray = (0x90, 60, 100)
+        self.knobs.receive_midi(stray)
+        self.assertIn(stray, self.knobs.forwarded_to_framework)
+
+    def test_a_macro_cc_reaches_the_device(self):
+        param = FakeParameter(0.0, 127.0)
+        self.knobs._device.set_device(FakeDevice([FakeParameter(0.0, 1.0), param]))
+        self._turn(sorted(KNOBS_MODULE.MACRO_BY_CC)[0], 65)
+        self.assertEqual(param.value, 1.0)
+
+    def test_a_raising_device_is_logged_not_propagated(self):
+        # And tearDown must SEE it -- the point of the opt-out.
+        self.expect_logged_exception = True
+
+        class Exploding(object):
+            name = 'Exploding Rack'
+
+            @property
+            def parameters(self):
+                raise RuntimeError('device went away')
+
+        self.knobs._device.set_device(Exploding())
+        self._turn(sorted(KNOBS_MODULE.MACRO_BY_CC)[0], 65)
+        self.assertTrue(any('exception in receive_midi' in l
+                            for l in self.knobs._c_instance.log))
+
+    # ------------------------------------------------------- the guards
+
+    def test_a_macro_never_writes_outside_the_parameter_range(self):
+        # Live's setter raises on an out-of-range write, and an exception in a
+        # MIDI callback disables the script silently.
+        param = FakeParameter(0.0, 127.0, value=127.0)
+        self.knobs._device.set_device(FakeDevice([FakeParameter(0.0, 1.0), param]))
+        self.knobs._adjust_macro(1, 1)
+        self.assertEqual(param.value, 127.0)
+
+    def test_a_disabled_parameter_is_left_alone(self):
+        param = FakeParameter(0.0, 127.0)
+        param.is_enabled = False
+        self.knobs._device.set_device(FakeDevice([FakeParameter(0.0, 1.0), param]))
+        self.knobs._adjust_macro(1, 1)
+        self.assertEqual(param.value, 0.0)
+
+    def test_a_rack_with_fewer_macros_than_knobs_is_not_an_error(self):
+        self.knobs._device.set_device(FakeDevice([FakeParameter(0.0, 1.0)]))
+        self.knobs._adjust_macro(9, 1)
+        self.assertTrue(any('does nothing' in l
+                            for l in self.knobs._c_instance.log))
+
+    def test_two_identically_named_devices_are_both_reported(self):
+        # Live names every rack "Audio Effect Rack", so a latch keyed on the
+        # finished message reported the first and silently dropped the second
+        # -- while the troubleshooting step reads "no line, so not this cause".
+        devices = [FakeDevice([FakeParameter(0.0, 1.0)], name='Audio Effect Rack')
+                   for _ in range(2)]
+        for device in devices:
+            self.knobs._device.set_device(device)
+            self.knobs._adjust_macro(9, 1)
+        lines = [l for l in self.knobs._c_instance.log if 'does nothing' in l]
+        self.assertEqual(len(lines), 2, lines)
+
+    def test_the_once_latch_is_capped(self):
+        for index in range(40):
+            self.knobs._log_once('a message that varies %d' % index)
+        lines = [l for l in self.knobs._c_instance.log if 'that varies' in l]
+        self.assertEqual(len(lines), 32, 'wrote %d lines' % len(lines))
+
+    def test_the_two_navigation_ccs_are_distinct(self):
+        # NAV_CCS is a tuple and set() collapses a duplicate silently; then
+        # _navigate's "if cc == CC_TRACK" claims both, the scene encoder banks
+        # tracks, and the box's Y axis becomes unreachable. No log line.
+        self.assertNotEqual(KNOBS_MODULE.CC_TRACK, KNOBS_MODULE.CC_SCENE)
 
     def test_the_macro_map_is_self_consistent(self):
         K = KNOBS_MODULE
@@ -1563,11 +1954,20 @@ class KnobScript(unittest.TestCase):
         # One measured hardware fact, two copies -- KNOBS hard-codes CENTRE and
         # the sequencer exposes KNOB_MODE. If they ever disagree, the same byte
         # moves the session box and the step lane in opposite directions.
+        #
+        # BOTH modes, not just the shipped one: comparing the two scripts under
+        # 'centre' alone never executed the 'twos' branch at all, so the whole
+        # convention a stranger with a 1/127 encoder depends on -- added by the
+        # previous review round -- shipped untested.
         self.assertEqual(KNOBS_MODULE.ENCODER_MODE, C.KNOB_MODE)
-        for value in (63, 64, 65, 1, 127):
-            self.assertEqual(KNOBS_MODULE.decode_relative(value),
-                             decode_relative(value, C.KNOB_MODE),
-                             'value %d' % value)
+        for mode in ('centre', 'twos'):
+            for value in (0, 1, 2, 63, 64, 65, 126, 127):
+                self.assertEqual(KNOBS_MODULE.decode_relative(value, mode),
+                                 decode_relative(value, mode),
+                                 'mode %s, value %d' % (mode, value))
+        # And the two conventions must not be silently interchangeable.
+        self.assertNotEqual(KNOBS_MODULE.decode_relative(127, 'centre'),
+                            KNOBS_MODULE.decode_relative(127, 'twos'))
 
 
 if __name__ == '__main__':

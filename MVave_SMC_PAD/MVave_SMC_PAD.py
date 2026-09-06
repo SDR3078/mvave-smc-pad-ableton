@@ -39,6 +39,11 @@ class MVave_SMC_PAD(ControlSurface):
     _combine_active_instances = staticmethod(_combine_active_instances)
 
     def __init__(self, c_instance):
+        # Before ControlSurface.__init__: the base constructor wires the
+        # selected-track listener, so _on_selected_track_changed can fire
+        # before the next line returns and _log_exception must not itself
+        # raise on a missing attribute.
+        self._exceptions_logged = set()
         ControlSurface.__init__(self, c_instance)
         # self.set_suppress_rebuild_requests(True)
         with self.component_guard():
@@ -245,20 +250,45 @@ class MVave_SMC_PAD(ControlSurface):
         # transport.set_song_position_control(self._ctrl_map[SONGPOSITION]) #still not implemented as of Live 8.1.6
 
     def _on_selected_track_changed(self):
-        # Guarded like the sibling scripts'. Live calls this on every track
-        # click and all three surfaces are loaded at once, so an exception here
-        # -- a device deleted between the click and the read, say -- would take
-        # the clip launcher down for the rest of the session with nothing in the
-        # UI to say so. MVave_SMC_KNOBS wraps the identical body for the same
-        # reason; this file was the only one of the three left unwrapped.
+        # Guarded. Live calls this on every track click and all three surfaces
+        # are loaded at once, so an exception here -- a device deleted between
+        # the click and the read, say -- would take the clip launcher down for
+        # the rest of the session with nothing in the UI to say so.
+        #
+        # MVave_SMC_KNOBS guards the same body the same way; MVave_SMC_STEPSEQ
+        # reaches the selection through a listener instead and guards that with
+        # @_guarded. The three shapes differ; the containment does not.
         try:
             self._follow_selected_track()
         except Exception:
-            self.log_message('MVave_SMC_PAD: exception in selected track changed\n%s'
-                             % traceback.format_exc())
+            self._log_exception('selected track changed')
+
+    def _log_exception(self, where):
+        # Latched and capped exactly as the sibling scripts do. One track click
+        # drives all three surfaces, so a fault here repeats on every click:
+        # unlatched, this wrote a full traceback each time and buried both
+        # siblings' single entries -- the only copies still holding the
+        # original context. docs/DEVELOPMENT.md: "latch them so they print
+        # once."
+        text = traceback.format_exc()
+        lines = text.strip().split('\n')
+        frame = next((l.strip() for l in reversed(lines)
+                      if l.strip().startswith('File "')), '')
+        signature = (where, frame, lines[-1])
+        if signature in self._exceptions_logged or len(self._exceptions_logged) >= 32:
+            return
+        self._exceptions_logged.add(signature)
+        self.log_message('MVave_SMC_PAD: exception in %s\n%s' % (where, text))
 
     def _follow_selected_track(self):
-        ControlSurface._on_selected_track_changed(self)
+        # The superclass call gets its OWN guard, matching MVave_SMC_KNOBS:
+        # everything below it is this script's rebinding, and a framework
+        # failure must not cancel it -- otherwise one raise leaves the device
+        # component pointed at the previous track for the rest of the session.
+        try:
+            ControlSurface._on_selected_track_changed(self)
+        except Exception:
+            self._log_exception('ControlSurface._on_selected_track_changed')
         track = self.song().view.selected_track
         device_to_select = track.view.selected_device
         if device_to_select is None and len(track.devices) > 0:
