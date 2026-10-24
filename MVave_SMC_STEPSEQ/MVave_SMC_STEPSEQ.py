@@ -13,8 +13,8 @@
 #   makes a note drawn with the mouse light up on the pads. Live's own playback
 #   provides the timing -- this script never plays a note.
 #
-#   One write path. Both views funnel into toggle_step(). A view is a
-#   coordinate mapping and a render function, nothing more.
+#   Step toggles and probability edits write only in response to user input.
+#   Both views use the same edit paths.
 #
 #   Listeners drive rendering, not the input handler. Pressing a pad writes to
 #   the clip and returns; the clip's notes listener fires and redraws. That is
@@ -27,12 +27,15 @@
 from __future__ import with_statement
 
 import math
+import time
 import traceback
 
 import Live
 from _Framework.ControlSurface import ControlSurface
 
 from .MIDI_Map import *
+from .ParameterLocks import ParameterLocks
+from .NativeRecording import NativeRecording
 
 
 VIEW_FOCUS = 0
@@ -128,13 +131,28 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         # refresh_state() the moment it returns and it must not find a
         # half-built object. Nothing here touches the Live API.
         self._ready = False
+        self._held_steps = {}
+        self._activity_notes = {}
+        self._activity_state = (None, False)
+        self._lock_release_time = -1.0
+        self._lock_hint_shown = False
+        self._parameter_locks = ParameterLocks()
+        self._native_recording = None
+        self._continuous_envelopes = []
+        self._continuous_previews = []
+        self._preview_scheduled = False
+        self._base_edits = []
+        self._base_edit_scheduled = False
         self._clip = None
+        self._controlled_track = None
+        self._remembered_clips = []
         self._view = VIEW_FOCUS
         self._lane = DEFAULT_LANE
         self._bank = 0
         self._lane_window = DEFAULT_LANE
         self._page = 0
         self._mod = False
+        self._mute_mode = False
         self._follow = FOLLOW_PLAYHEAD
         # Clamped exactly as _lane_base_by derives it at bank 0, so the two
         # cannot start out of step. Writing the raw constant here put every
@@ -317,6 +335,9 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         self._rebind()
 
     def _detach_clip(self):
+        self._stop_native_recording(defer=True)
+        self._base_edits = []
+        self._held_steps.clear()
         clip = self._clip
         self._clip = None
         self._playhead = None
@@ -339,14 +360,36 @@ class MVave_SMC_STEPSEQ(ControlSurface):
 
     @_guarded('rebind')
     def _rebind(self):
-        self._detach_clip()
+        view = self.song().view
+        if self._controlled_track is None and self._drum_rack(view.selected_track) is not None:
+            self._controlled_track = view.selected_track
+        target = self._controlled_track
+        if target is not None and hasattr(target, 'clip_slots'):
+            # A removed track must release its target instead of dangling.
+            if target not in self.song().tracks:
+                self._controlled_track = None
+                target = None
+        candidate = view.detail_clip
         clip = None
-        try:
-            candidate = self.song().view.detail_clip
+        if target is None:
+            # Retain upstream generic-MIDI behavior until a Drum Rack is bound.
             if candidate is not None and candidate.is_midi_clip:
                 clip = candidate
-        except Exception:
-            clip = None
+        else:
+            clips = self._midi_clips(target)
+            if view.selected_track == target and candidate in clips:
+                clip = candidate
+            elif self._clip in clips:
+                clip = self._clip
+            else:
+                clip = self._preferred_clip(target, clips)
+        if clip == self._clip:
+            self._render()
+            return
+        self._detach_clip()
+        if target is not None and clip is not None:
+            self._remembered_clips = [(t, c) for t, c in self._remembered_clips if t != target]
+            self._remembered_clips.append((target, clip))
 
         if clip is not None and not hasattr(clip, 'get_notes_extended'):
             # Live 10 and older. Announce it rather than rendering an empty
@@ -447,38 +490,215 @@ class MVave_SMC_STEPSEQ(ControlSurface):
 
     def _on_pad(self, index, pressed, velocity=None):
         if not pressed:
+            held = self._held_steps.pop(index, None)
+            if held is not None and held['edited']:
+                self._lock_release_time = time.monotonic()
+                self._log('lock pad released: step %d' % (held['step'] + 1))
+            if held is not None and not held['edited'] and held['clip'] == self._clip:
+                self.toggle_step(held['pitch'], held['step'], held['velocity'])
+            return
+        if self._mute_mode:
+            self._toggle_drum_mute(lane_for_pad(index, self._lane_base))
             return
         if self._mod:
             self._select_lane(lane_for_pad(index, self._lane_base))
             return
-        # Push-style: how hard you hit the pad becomes the step's velocity.
-        # None when the caller has none to offer -- the self-test, and the
-        # sibling-script entry point -- in which case the knob/default stands.
-        strike = velocity if (USE_STRIKE_VELOCITY and velocity) else None
         if self._view == VIEW_FOCUS:
-            self.toggle_step(self._lane, self._bank * 16 + index, strike)
+            pitch, step = self._lane, self._bank * 16 + index
         else:
             row, col = divmod(index, 4)
-            self.toggle_step(self._lane_window + row, self._page * 4 + col, strike)
+            pitch, step = self._lane_window + row, self._page * 4 + col
+        if self._clip is None or step >= self._step_count():
+            return
+        # Repeated note-ons must not erase an in-progress lock gesture.
+        if index in self._held_steps:
+            return
+        self._held_steps[index] = dict(clip=self._clip, pitch=pitch, step=step,
+            velocity=velocity if USE_STRIKE_VELOCITY else None, edited=False)
+
+    def handle_macro_lock(self, parameter, delta):
+        """Return True when this surface owns the knob gesture."""
+        recording = self._native_recording
+        if recording is not None:
+            if not self.song().is_playing or not self.song().session_record:
+                self._stop_native_recording()
+            else:
+                try:
+                    for held in self._held_steps.values():
+                        held['edited'] = True
+                    recording.turn(parameter, delta)
+                except Exception:
+                    self._log_exception('native recording knob')
+                    self._stop_native_recording()
+                    self.show_message('SMC recording stopped; see Live Log.txt')
+                return True
+        if any(clip == self._clip and param == parameter for clip, param in self._continuous_envelopes):
+            # Audition the manual value, then resume the unchanged curve when
+            # the knob is idle. Never collapse continuous curves into steps.
+            if not self._held_steps:
+                if parameter.is_enabled:
+                    parameter.value = self._parameter_locks._changed(parameter, parameter.value, delta)
+                    entry = next((item for item in self._continuous_previews
+                        if item['parameter'] == parameter), None)
+                    if entry is None:
+                        self._continuous_previews.append(dict(parameter=parameter, time=time.monotonic()))
+                    else:
+                        entry['time'] = time.monotonic()
+                    if not self._preview_scheduled:
+                        self._preview_scheduled = True
+                        self.schedule_message(3, self._resume_continuous_previews)
+                return True
+            self._continuous_envelopes = [(c, p) for c, p in self._continuous_envelopes
+                if not (c == self._clip and p == parameter)]
+        held = list(self._held_steps.values())
+        if held:
+            # Consume even a failed lock gesture: never delete its note or
+            # accidentally turn it into a global parameter change.
+            first_edit = any(not item['edited'] for item in held)
+            for item in held:
+                item['edited'] = True
+            try:
+                clip = self._clip
+                if clip is None:
+                    return True
+                # Only lock existing notes, and use the rack explicitly selected
+                # by the user. Automatic per-drum rack binding comes later.
+                steps = [h['step'] for h in held if h['clip'] == clip and
+                    clip.get_notes_extended(h['pitch'], 1,
+                        clip.loop_start + h['step'] * STEP, STEP)]
+                if not steps:
+                    self.show_message('SMC: hold an active step to add a lock')
+                    return True
+                self._parameter_locks.adjust(clip, parameter, steps, delta, STEP)
+                if first_edit:
+                    self._log('parameter lock started: %s steps %s' %
+                              (parameter.name, [n + 1 for n in steps]))
+                self.show_message('Lock %s: steps %s' % (parameter.name,
+                    ', '.join(str(n + 1) for n in steps)))
+            except Exception:
+                self._log_exception('parameter lock')
+                self.show_message('SMC lock failed; see Live Log.txt')
+            return True
+        # Knob and pad messages arrive through separate ports. Ignore the
+        # short tail of a lock gesture instead of treating it as a base edit.
+        if time.monotonic() - self._lock_release_time < 0.3:
+            return True
+        if self._clip is not None:
+            getter = getattr(self._clip, 'automation_envelope', None)
+            if getter is None:
+                return False
+            envelope = getter(parameter)
+            if envelope is not None:
+                for edit in self._base_edits:
+                    if edit['clip'] == self._clip and edit['parameter'] == parameter:
+                        edit['delta'] += delta
+                        break
+                else:
+                    self._base_edits.append(dict(clip=self._clip, parameter=parameter, delta=delta))
+                if not self._base_edit_scheduled:
+                    self._base_edit_scheduled = True
+                    self.schedule_message(2, self._flush_base_edits)
+                return True
+            return self._parameter_locks.adjust_base(self._clip, parameter, delta, STEP)
+        return False
+
+    def _flush_base_edits(self):
+        self._base_edit_scheduled = False
+        edits, self._base_edits = self._base_edits, []
+        for edit in edits:
+            if edit['clip'] != self._clip:
+                continue
+            try:
+                self._parameter_locks.adjust_base(edit['clip'], edit['parameter'], edit['delta'], STEP)
+            except Exception:
+                self._log_exception('base macro edit')
+                self.show_message('SMC base edit failed; see Live Log.txt')
+
+    def _resume_continuous_previews(self):
+        self._preview_scheduled = False
+        keep = []
+        for entry in self._continuous_previews:
+            if time.monotonic() - entry['time'] < 0.25:
+                keep.append(entry)
+            else:
+                try:
+                    entry['parameter'].re_enable_automation()
+                except Exception:
+                    self._log_exception('resume continuous automation')
+        self._continuous_previews = keep
+        if keep:
+            self._preview_scheduled = True
+            self.schedule_message(1, self._resume_continuous_previews)
+
+    def _toggle_native_recording(self):
+        if self._native_recording is not None:
+            self._stop_native_recording()
+            self.show_message('Free REC OFF - playback continues')
+            self._paint_buttons()
+            return
+        try:
+            track = self._controlled_track or self.song().view.selected_track
+            managed, device = self.drum_macro_target()
+            if device is None or self._clip is None:
+                raise RuntimeError('Select a drum Instrument Rack and Session clip')
+            self._base_edits = []
+            self._continuous_previews = []
+            self._native_recording = NativeRecording(self.song(), track, self._clip)
+            self._log('native Session automation recording ON')
+            self.show_message('Free REC ON - turn macro knobs; Record + Play ends recording')
+        except Exception as exc:
+            self._log('native recording not started: %s' % exc)
+            self.show_message('SMC: %s' % exc)
+        self._paint_buttons()
+
+    def _stop_native_recording(self, defer=False):
+        recording, self._native_recording = self._native_recording, None
+        if recording is None:
+            return
+        if defer:
+            self.schedule_message(1, lambda: self._cleanup_native_recording(recording))
+        else:
+            self._cleanup_native_recording(recording)
+
+    def _cleanup_native_recording(self, recording):
+        try:
+            recording.stop()
+        except Exception:
+            self._log_exception('stop native recording')
+        for parameter, value in recording.parameters:
+            if not any(c == recording.clip and p == parameter for c, p in self._continuous_envelopes):
+                self._continuous_envelopes.append((recording.clip, parameter))
+            self._parameter_locks._owned = [state for state in self._parameter_locks._owned
+                if not (state['clip'] == recording.clip and state['parameter'] == parameter)]
+        self._log('native Session automation recording OFF')
 
     def _on_button(self, number, pressed):
+        if number == BTN_VIEW:
+            self._mute_mode = pressed
+            self._held_steps.clear()
+            self._render()
+            return
         if number == BTN_MOD:
             self._mod = pressed
-            self._paint_buttons()       # lights while held, clears on release
+            self._held_steps.clear()
+            self._render()       # lights while held, clears on release
             return
         if not pressed:
             return
-        if number == BTN_VIEW:
-            self._toggle_view()
-        elif number == BTN_PLAY:
-            self._toggle_transport()
+        if number == BTN_PLAY:
+            self._log('Play press: Record modifier=%s native recording=%s' %
+                (self._mod, self._native_recording is not None))
+            if self._mod:
+                self._toggle_native_recording()
+            else:
+                self._toggle_transport()
         elif number == BTN_LEFT:
             # Held MOD turns the arrows into a lane-bank control, because
             # MOD + pad only reaches the 16 pitches from _lane_base and a drum
             # rack has more rows than that.
-            self._lane_base_by(-16) if self._mod else self._page_by(-1)
+            self._arrow(-1)
         elif number == BTN_RIGHT:
-            self._lane_base_by(16) if self._mod else self._page_by(1)
+            self._arrow(1)
 
     def _on_cc(self, cc, value):
         delta = decode_relative(value, KNOB_MODE)
@@ -498,11 +718,162 @@ class MVave_SMC_STEPSEQ(ControlSurface):
             pass                            # reserved: nudge/swing later
 
     def _select_lane(self, pitch):
+        self._stop_native_recording()
+        self._held_steps.clear()
         self._lane = pitch
+        self._follow_drum_rack()
         if self._view == VIEW_OVERVIEW:
             # Otherwise the press has no visible effect: put the chosen lane on
             # the top row of the window.
             self._lane_window = _clamp(pitch, 0, 124)
+        self._render()
+
+    def _drum_rack(self, track=None):
+        def find(devices):
+            for device in devices:
+                if getattr(device, 'can_have_drum_pads', False):
+                    return device
+                if getattr(device, 'can_have_chains', False):
+                    for chain in device.chains:
+                        result = find(chain.devices)
+                        if result is not None:
+                            return result
+            return None
+        track = track if track is not None else (self._controlled_track or self.song().view.selected_track)
+        return find(getattr(track, 'devices', ()))
+
+    def _midi_clips(self, track):
+        return [slot.clip for slot in getattr(track, 'clip_slots', ())
+                if slot.has_clip and slot.clip.is_midi_clip]
+
+    def _preferred_clip(self, track, clips):
+        playing = next((clip for clip in clips if clip.is_playing), None)
+        if playing is not None:
+            return playing
+        remembered = next((c for t, c in self._remembered_clips if t == track and c in clips), None)
+        return remembered or (clips[0] if clips else None)
+
+    def _arrow(self, direction):
+        if self._held_steps and not self._mod and not self._mute_mode:
+            self._adjust_probability(direction)
+            return
+        if self._mod:
+            self._lane_base_by(direction * 16)
+        elif self._mute_mode:
+            self._page_by(direction)
+        else:
+            tracks = [track for track in self.song().tracks
+                      if self._drum_rack(track) is not None]
+            if not tracks:
+                self._page_by(direction)
+                return
+            current = self._controlled_track
+            index = tracks.index(current) if current in tracks else (-1 if direction > 0 else len(tracks))
+            target = tracks[_clamp(index + direction, 0, len(tracks) - 1)]
+            if target == current:
+                return
+            self._held_steps.clear()
+            self._controlled_track = target
+            self._lane = DEFAULT_LANE
+            self._lane_base = LANE_SELECT_BASE
+            self._lane_bank = 0
+            self._bank = self._page = 0
+            self._mute_mode = self._mod = False
+            # Rebind without launching or stopping any clip.
+            self._detach_clip()
+            self.song().view.selected_track = target
+            self._rebind()
+            self._follow_drum_rack()
+            self.show_message('SMC track: %s' % target.name)
+
+    def _adjust_probability(self, direction):
+        """Edit native note chance; preserve the Live note vector and note IDs."""
+        held = list(self._held_steps.values())
+        for item in held:
+            # Consume even an empty/failed edit so release never toggles a step.
+            item['edited'] = True
+        clip = self._clip
+        if clip is None:
+            return
+        changed = []
+        try:
+            for item in held:
+                if item['clip'] != clip or not 0 <= item['step'] < self._step_count():
+                    continue
+                notes = clip.get_notes_extended(item['pitch'], 1,
+                    clip.loop_start + item['step'] * STEP, STEP)
+                if not notes:
+                    continue
+                for note in notes:
+                    chance = float(note.probability)
+                    if direction < 0:
+                        choices = [p for p in PROBABILITY_LEVELS if p < chance - 1e-6]
+                        note.probability = choices[-1] if choices else PROBABILITY_LEVELS[0]
+                    else:
+                        choices = [p for p in PROBABILITY_LEVELS if p > chance + 1e-6]
+                        note.probability = choices[0] if choices else PROBABILITY_LEVELS[-1]
+                # Pass the original MidiNoteVector, never a Python list/tuple.
+                clip.apply_note_modifications(notes)
+                changed.extend(int(round(note.probability * 100)) for note in notes)
+            if changed:
+                self.show_message('SMC probability: %s%%' %
+                    '/'.join(str(p) for p in sorted(set(changed))))
+            else:
+                self.show_message('SMC: hold an active step to change probability')
+        except Exception:
+            self._log_exception('probability edit')
+            self.show_message('SMC probability edit failed; see Live Log.txt')
+        self._render()
+
+    @staticmethod
+    def _probability_color(chance):
+        # External Chance values use the nearest display level; no clip write.
+        index = min(range(len(PROBABILITY_LEVELS)),
+                    key=lambda i: abs(PROBABILITY_LEVELS[i] - chance))
+        return PROBABILITY_COLORS[index]
+
+    def _drum_pad(self, pitch, rack=None):
+        rack = self._drum_rack() if rack is None else rack
+        if rack is None:
+            return None
+        return next((pad for pad in rack.drum_pads if pad.note == pitch), None)
+
+    def drum_macro_target(self):
+        """Managed Drum Rack tracks must never fall back to another drum."""
+        rack = self._drum_rack()
+        if rack is None:
+            return False, None
+        pad = self._drum_pad(self._lane, rack)
+        if pad is None:
+            return True, None
+        for chain in pad.chains:
+            for device in chain.devices:
+                if getattr(device, 'class_name', '') == 'InstrumentGroupDevice':
+                    return True, device
+        return True, None
+
+    def _follow_drum_rack(self):
+        rack = self._drum_rack()
+        if rack is None:
+            return
+        pad = self._drum_pad(self._lane, rack)
+        if pad is None:
+            return
+        rack.view.selected_drum_pad = pad
+        managed, device = self.drum_macro_target()
+        if device is not None:
+            if self.song().view.selected_track == (self._controlled_track or self.song().view.selected_track):
+                self.song().view.select_device(device)
+            self.show_message('SMC drum: %s' % pad.name)
+        else:
+            self.show_message('SMC: %s needs an Instrument Rack for macros' % pad.name)
+
+    def _toggle_drum_mute(self, pitch):
+        pad = self._drum_pad(pitch)
+        if pad is None or not pad.chains:
+            return
+        pad.mute = not pad.mute
+        self.show_message('%s: %s' % (pad.name, 'muted' if pad.mute else 'unmuted'))
         self._render()
 
     def _toggle_view(self):
@@ -533,6 +904,13 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         self._lane_bank = _clamp(self._lane_bank + delta // 16,
                                  LANE_BANK_MIN, LANE_BANK_MAX)
         self._lane_base = _clamp(LANE_SELECT_BASE + 16 * self._lane_bank, 0, 112)
+        rack = self._drum_rack()
+        if rack is not None:
+            rack.view.drum_pads_scroll_position = self._lane_base // 4
+        message = 'Drum bank: MIDI notes %d-%d' % (self._lane_base, self._lane_base + 15)
+        self._log(message)
+        if hasattr(self, 'show_message'):
+            self.show_message(message)
         self._render()
 
     def _page_by(self, delta):
@@ -550,11 +928,19 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         # playing -- paging away became a mode you could not leave.
         if self._playhead is not None and self._pads_for_step(self._playhead):
             self._follow = FOLLOW_PLAYHEAD
+        first = self._bank * 16 if self._view == VIEW_FOCUS else self._page * 4
+        width = 16 if self._view == VIEW_FOCUS else 4
+        message = 'Steps %d-%d of %d; release Stop to see pattern' % (
+            first + 1, min(first + width, self._step_count()), self._step_count())
+        self._log(message)
+        if hasattr(self, 'show_message'):
+            self.show_message(message)
         self._render()
 
     def _toggle_transport(self):
         song = self.song()
         if song.is_playing:
+            self._stop_native_recording()
             song.stop_playing()
         else:
             song.start_playing()
@@ -642,17 +1028,24 @@ class MVave_SMC_STEPSEQ(ControlSurface):
     def _on_playhead(self):
         clip = self._clip
         step = None
+        position = None
         if clip is not None and clip.is_playing:
-            step = step_at(clip.playing_position, clip.loop_start)
+            position = clip.playing_position
+            step = step_at(position, clip.loop_start)
             if not 0 <= step < self._step_count():
                 step = None
+        activity_changed = self._update_activity_position(step, position)
         previous = self._playhead
         if step == previous:
-            # This listener fires per audio buffer. Only a step change is worth
-            # any work, and _paint() below reads no clip data at all.
+            # Pulse off halfway through each step, even for consecutive hits.
+            # No note queries or extra timers on this audio-buffer callback.
+            if activity_changed:
+                self._paint()
             return
         self._playhead = step
         if step is None:
+            if self._native_recording is not None:
+                self.schedule_message(1, self._finish_native_after_stop)
             # Stopping restores following, so a manual page is temporary rather
             # than sticky and there is no mode to get stuck in.
             self._follow = FOLLOW_PLAYHEAD
@@ -668,6 +1061,11 @@ class MVave_SMC_STEPSEQ(ControlSurface):
                 self._render()  # the window moved, so the whole grid is stale
                 return
         self._paint()
+
+    def _finish_native_after_stop(self):
+        if not self.song().is_playing:
+            self._stop_native_recording()
+            self._paint_buttons()
 
     def _worth_following(self, step):
         """Is this step worth banking the whole view onto?
@@ -705,6 +1103,7 @@ class MVave_SMC_STEPSEQ(ControlSurface):
 
     def _refresh(self):
         """Read the clip into the pad grid. The only place the clip is read."""
+        self._refresh_activity()
         self._grid = [COLOR_STEP_OFF] * 16
         self._on = [False] * 16
         clip = self._clip
@@ -717,9 +1116,41 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         else:
             self._refresh_overview(clip)
 
+    def _update_activity_position(self, step, position):
+        state = (None, False)
+        if (self._mute_mode or self._mod) and step is not None:
+            phase = (position - self._clip.loop_start) / STEP - step
+            state = (step, phase < DRUM_ACTIVITY_STEP_FRACTION)
+        changed = state != self._activity_state
+        self._activity_state = state
+        return changed
+
+    def _refresh_activity(self):
+        """Cache visible drums' programmed steps; playback only consults cache."""
+        self._activity_notes = {}
+        self._activity_state = (None, False)
+        clip = self._clip
+        if clip is None or not (self._mute_mode or self._mod):
+            return
+        total = self._step_count()
+        if total <= 0:
+            return
+        notes = clip.get_notes_extended(self._lane_base, 16,
+            clip.loop_start, min(total * STEP, clip.loop_end - clip.loop_start))
+        for note in notes:
+            step = step_at(note.start_time, clip.loop_start)
+            if 0 <= step < total and not note.mute:
+                self._activity_notes.setdefault(step, set()).add(int(note.pitch))
+        if clip.is_playing:
+            position = clip.playing_position
+            step = step_at(position, clip.loop_start)
+            if 0 <= step < total:
+                self._update_activity_position(step, position)
+
     def _refresh_focus(self, clip):
         first = self._bank * 16
         total = self._step_count()
+        probabilities = {}
         for index in range(16):
             if first + index < total:
                 self._grid[index] = self._empty_color(first + index)
@@ -732,7 +1163,10 @@ class MVave_SMC_STEPSEQ(ControlSurface):
             # sit past the loop brace, and the read window can reach them.
             # Lighting one would promise a step that toggle_step refuses.
             if 0 <= index < 16 and first + index < total:
-                self._grid[index] = COLOR_STEP_ON
+                # Multiple notes in a step display the highest note chance.
+                probabilities[index] = max(probabilities.get(index, 0.0),
+                    float(getattr(note, 'probability', 1.0)))
+                self._grid[index] = self._probability_color(probabilities[index])
                 self._on[index] = True
 
     def _refresh_overview(self, clip):
@@ -756,7 +1190,20 @@ class MVave_SMC_STEPSEQ(ControlSurface):
     def _paint(self):
         """Overlay the playhead on the grid and send only what changed."""
         colors = list(self._grid)
-        if self._playhead is not None:
+        if self._mute_mode or self._mod:
+            rack = self._drum_rack()
+            colors = [0] * 16
+            for index in range(16):
+                pitch = lane_for_pad(index, self._lane_base)
+                pad = self._drum_pad(pitch, rack)
+                if pad is not None and pad.chains:
+                    colors[index] = 14 if pad.mute else 5
+                    if self._mod and not self._mute_mode and pitch == self._lane:
+                        colors[index] = 40
+                    activity_step, pulse = self._activity_state
+                    if pulse and pitch in self._activity_notes.get(activity_step, ()):
+                        colors[index] = COLOR_DRUM_ACTIVITY
+        elif self._playhead is not None:
             for index in self._pads_for_step(self._playhead):
                 colors[index] = (COLOR_PLAYHEAD_ON if self._on[index]
                                  else COLOR_PLAYHEAD)
@@ -784,8 +1231,8 @@ class MVave_SMC_STEPSEQ(ControlSurface):
         except Exception:
             playing = False
         for note, on in ((BTN_PLAY, playing),
-                         (BTN_VIEW, self._view == VIEW_OVERVIEW),
-                         (BTN_MOD, self._mod)):
+                         (BTN_VIEW, self._mute_mode),
+                         (BTN_MOD, self._mod or self._native_recording is not None)):
             if note is None or note < 0:
                 continue
             color = BTN_LED_ON if on else BTN_LED_OFF

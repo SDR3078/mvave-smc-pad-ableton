@@ -1,5 +1,30 @@
 # M-Vave SMC-PAD for Ableton Live
 
+## Contribution by Gavin (gavincastle) - working build 2026-10-15
+
+Based on [Sander / SDR3078’s original project](https://github.com/SDR3078/mvave-smc-pad-ableton).
+His original authorship, history and provenance notes are retained. This contribution
+adds the performance workflow described below; it does not choose a new licence.
+See [contribution validation and limits](docs/CONTRIBUTION.md).
+
+The tested probability/activity build is now the main source baseline. The five
+performance essentials are **step sequencing, parameter locks, on-the-fly mutes,
+real-time macro recording and eight-knob macro control per drum**.
+
+Hold active steps + arrows to set chance: 25%, 50%, 75% or 100% (default).
+Hold Record or Pause/Stop for drum selection/mutes with cyan pattern-activity
+pulses. Probability uses palette values 7, 21, 9 and 64 respectively.
+
+Start with the [current sequencer guide](docs/STEPSEQ.md),
+[hands-on reference](docs/HANDS-ON.md), and
+[changelog](CHANGELOG.md). Install the complete `MVave_SMC_STEPSEQ` and
+`MVave_SMC_KNOBS` folders for this setup. Restart Live after installing updates.
+185 offline tests pass; the user additionally confirmed smooth hardware jamming.
+Current limitations are documented in those guides.
+
+The sections below also cover the upstream-derived clip launcher. Its controls
+and installation differ from the current drum-sequencer workflow above.
+
 Ableton Live Remote Scripts that turn an **M-Vave SMC-PAD** into a Launchpad-style
 clip launcher — pads fire clips, pad LEDs show clip state, and the encoders drive
 the session box and the selected device's macros — and, on a second pad preset,
@@ -33,8 +58,9 @@ off empty.
 
 `MVave_SMC_STEPSEQ/` is a separate script on a separate pad preset. The 16 pads become
 16 steps of one drum lane in the selected MIDI clip, with a playhead that chases
-Live's playback; a second view shows four lanes by four steps, for reading a
-kick/clap/hat/open-hat groove at a glance.
+Live's playback. Hold Record for drum selection or Pause/Stop for drum mutes;
+both include cyan pattern-activity pulses. The older four-lane renderer remains
+internal for regression tests.
 
 The clip is the only state it keeps, so Ctrl+Z undoes a step, saving the set
 saves the pattern, and a note drawn with the mouse lights up on the pads.
@@ -58,7 +84,8 @@ to interpret those notes as mute and solo. Fully reversible — put
 
 **Revision.** These scripts carry no version number in Live. If you need to
 quote one — a bug report, a question — use `SCRIPT_REVISION` at the top of
-`MVave_SMC_PAD/MIDI_Map.py`. Installing is "copy a folder", so a downloaded
+`MVave_SMC_STEPSEQ/MIDI_Map.py` for the current sequencer, or
+`MVave_SMC_PAD/MIDI_Map.py` for the launcher. Installing is "copy a folder", so a downloaded
 copy has no commit hash to quote instead.
 
 ## Install

@@ -1,5 +1,11 @@
 # Development
 
+> **Current local release: 2026-10-15.** Current sequencer controls, probability,
+> activity caching and native macro recording are described in [STEPSEQ.md](STEPSEQ.md),
+> [LOCAL-PROTOTYPE.md](LOCAL-PROTOTYPE.md) and [CHANGELOG.md](../CHANGELOG.md).
+> The architectural history below also covers the separate launcher and earlier
+> sequencer design. Use the current guides for the performance workflow.
+
 How these scripts are built, why they are built that way, and what to change if
 you want them to do something else — or if you are writing a Remote Script for a
 different controller and want the parts of this that generalise.

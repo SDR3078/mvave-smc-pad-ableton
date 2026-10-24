@@ -1,5 +1,10 @@
 # Installing the M-Vave SMC-PAD Remote Scripts
 
+> **Current drum-sequencer build: 2026-10-15.** For the working probability,
+> activity, macro-lock and native-recording setup, follow [STEPSEQ.md](STEPSEQ.md)
+> and the [hands-on reference](../../SMC-PAD%20Reference%20Guide.md).
+> The instructions below describe the separate clip-launcher setup.
+
 Two Remote Scripts that turn the SMC-PAD into a Session-view clip launcher with
 pad LED feedback, plus device macros and session-box navigation on the encoders.
 

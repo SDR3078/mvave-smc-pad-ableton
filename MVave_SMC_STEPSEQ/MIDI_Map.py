@@ -1,7 +1,7 @@
 # Revision of these scripts, for bug reports: the install is "copy a
 # folder", so a downloaded copy carries no commit and nothing else here
 # names a version. Quote this line.
-SCRIPT_REVISION = '2026-09-06'
+SCRIPT_REVISION = '2026-10-15'
 
 # Hardware and layout constants for the SMC-PAD step sequencer.
 #
@@ -171,7 +171,11 @@ LED_NOTES = PAD_NOTES        # MEASURED 2026-08-31: the LEDs follow the pad note
 # There is no saturated red on this device. 14 is as close as it gets, and 14
 # and 15 are adjacent in the hue cycle, so red-pink and orange are the one pair
 # here that can be hard to tell apart.
-COLOR_STEP_ON = 20          # teal: a step that holds a note
+COLOR_STEP_ON = 64          # experimental: blue, 100% probability
+PROBABILITY_LEVELS = (0.25, 0.50, 0.75, 1.0)
+PROBABILITY_COLORS = (7, 21, 9, 64)
+COLOR_DRUM_ACTIVITY = 6     # cyan pulse in mute/drum-select views
+DRUM_ACTIVITY_STEP_FRACTION = 0.5
 COLOR_STEP_OFF = 0          # off: a step outside the loop, or an unlit empty one
 COLOR_PLAYHEAD = 15         # amber: the step the clip is playing right now
 COLOR_PLAYHEAD_ON = 40      # white: the playhead sitting on an active step

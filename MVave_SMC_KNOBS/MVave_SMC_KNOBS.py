@@ -37,7 +37,7 @@ import traceback
 # Revision of these scripts, for bug reports: the install is "copy a
 # folder", so a downloaded copy carries no commit and nothing else here
 # names a version. Quote this line.
-SCRIPT_REVISION = '2026-09-06'
+SCRIPT_REVISION = '2026-10-15'
 
 import Live
 from _Framework.ControlSurface import ControlSurface
@@ -245,6 +245,20 @@ class MVave_SMC_KNOBS(ControlSurface):
 
     def _adjust_macro(self, macro, delta):
         device = self._current_device()
+        try:
+            from MVave_SMC_STEPSEQ.MVave_SMC_STEPSEQ import MVave_SMC_STEPSEQ
+        except ImportError:
+            MVave_SMC_STEPSEQ = None
+        if MVave_SMC_STEPSEQ is not None:
+            for seq in MVave_SMC_STEPSEQ._active_instances:
+                if seq.song() == self.song():
+                    managed, target = seq.drum_macro_target()
+                    if managed:
+                        if target is None:
+                            self._log_once('selected drum needs its own Instrument Rack')
+                            return
+                        device = target
+                        break
         if device is None:
             self._log_once('no device selected yet -- click a track to bind one')
             return
@@ -257,6 +271,15 @@ class MVave_SMC_KNOBS(ControlSurface):
                            key=(id(device), macro))
             return
         param = params[macro]
+        # The sequencer owns held-step edits across the two MIDI ports.
+        try:
+            from MVave_SMC_STEPSEQ.MVave_SMC_STEPSEQ import MVave_SMC_STEPSEQ
+        except ImportError:
+            MVave_SMC_STEPSEQ = None
+        if MVave_SMC_STEPSEQ is not None:
+            for seq in MVave_SMC_STEPSEQ._active_instances:
+                if seq.handle_macro_lock(param, delta):
+                    return
         if not param.is_enabled:
             return
         if param.is_quantized:

@@ -53,6 +53,7 @@ class FakeNote(object):
         self.duration = duration
         self.velocity = velocity
         self.mute = mute
+        self.probability = 1.0
 
     def __repr__(self):
         return 'Note(%d @ %.3f)' % (self.pitch, self.start_time)
@@ -731,7 +732,7 @@ class Rendering(SeqTest):
         self.clip.loop_end = 1.5                    # six steps: 0..5
         self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 6 * C.STEP, C.STEP, 100))
         self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 5 * C.STEP, C.STEP, 100))
-        self.button(C.BTN_VIEW)                     # overview
+        self.seq._toggle_view()                     # overview
         self.button(C.BTN_RIGHT)                    # page 1 -> steps 4-7
         self.button(C.BTN_RIGHT)                    # and again: page 1 is the last
         self.seq.sent = []
@@ -843,7 +844,7 @@ class Playhead(SeqTest):
         # playhead test played step 1 on page 0, so the branch never ran.
         self.clip.loop_end = self.clip.loop_start + 64 * C.STEP
         self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 6 * C.STEP, C.STEP, 100))
-        self.button(C.BTN_VIEW)                 # overview
+        self.seq._toggle_view()                 # overview
         self.seq.sent = []
         self.clip.play(6 * C.STEP)
         self.assertEqual(self.seq._page, 1)
@@ -1020,7 +1021,7 @@ class Views(SeqTest):
     def setUp(self):
         SeqTest.setUp(self)
         self.clip.loop_end = 8.0
-        self.button(C.BTN_VIEW)
+        self.seq._toggle_view()
 
     def test_overview_maps_rows_to_lanes_and_columns_to_steps(self):
         self.press(4 + 2)               # row 1, col 2
@@ -1051,9 +1052,9 @@ class Views(SeqTest):
 
     def test_view_toggle_keeps_the_musical_position(self):
         # Focus bank 1 covers steps 16-31; overview page 4 starts at step 16.
-        self.button(C.BTN_VIEW)         # back to focus
+        self.seq._toggle_view()         # back to focus
         self.button(C.BTN_RIGHT)        # bank 1
-        self.button(C.BTN_VIEW)         # overview again
+        self.seq._toggle_view()         # overview again
         self.press(0)
         self.assertAlmostEqual(self.clip.notes[0].start_time, 16 * C.STEP)
 
@@ -1162,7 +1163,7 @@ class OffsetLoop(SeqTest):
         # The overview read window has its own copy of the offset, and the
         # focus tests above cannot see it.
         self.clip.notes.append(FakeNote(C.DEFAULT_LANE, 1.0 + 2 * C.STEP, C.STEP, 100))
-        self.button(C.BTN_VIEW)                 # overview
+        self.seq._toggle_view()                 # overview
         self.seq.sent = []
         self.seq.refresh_state()
         self.assertEqual(self.leds()[2], C.LANE_COLORS[0])
@@ -1631,12 +1632,11 @@ class Configuration(unittest.TestCase):
             seqmod.BTN_PLAY = original
 
     def test_the_palette_only_uses_measured_colours(self):
-        # Everything from 64 to 112 is one flat blue on this device, so a
-        # colour up there is almost certainly a mistake (HARDWARE.md 3.2).
+        # This experiment intentionally uses 64 as the flat-blue anchor.
         for colour in ((C.COLOR_STEP_ON, C.COLOR_PLAYHEAD, C.COLOR_PLAYHEAD_ON)
                        + tuple(C.LANE_COLORS)):
-            self.assertLessEqual(colour, 63, 'velocity %d is in the flat blue '
-                                             'range' % colour)
+            self.assertLessEqual(colour, 64, 'velocity %d exceeds the experimental blue '
+                                             'anchor' % colour)
 
     def test_knob_mode_is_one_of_the_two_schemes(self):
         self.assertIn(C.KNOB_MODE, ('centre', 'twos'))
@@ -1655,13 +1655,13 @@ class ButtonLeds(SeqTest):
         self.button(C.BTN_PLAY)                      # stops it again
         self.assertEqual(self.btn_led(C.BTN_PLAY), C.BTN_LED_OFF)
 
-    def test_view_button_lights_in_overview(self):
+    def test_mute_button_lights_while_held(self):
         self.seq.sent = []
         self.button(C.BTN_VIEW)
-        self.assertEqual(self.seq._view, VIEW_OVERVIEW)
+        self.assertTrue(self.seq._mute_mode)
         self.assertEqual(self.btn_led(C.BTN_VIEW), C.BTN_LED_ON)
         self.seq.sent = []
-        self.button(C.BTN_VIEW)
+        self.button(C.BTN_VIEW, False)
         self.assertEqual(self.btn_led(C.BTN_VIEW), C.BTN_LED_OFF)
 
     def test_modifier_lights_while_held(self):

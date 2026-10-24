@@ -1,407 +1,54 @@
-# `MVave_SMC_STEPSEQ` — the step sequencer
+# MVave_SMC_STEPSEQ - current working guide
 
-A third Remote Script for the SMC-PAD. The 16 pads become 16 steps of one drum
-lane in the selected MIDI clip, with LED feedback and a playhead that chases
-Live's own playback. A second view turns the grid into four lanes by four steps,
-so a kick/clap/hat/open-hat groove is readable at a glance.
+Revision **2026-10-15**, tested by the user on Live 12.4.6 Suite.
+The main source now includes probability and drum activity.
 
-This is the design record the build brief asked for as `docs/decisions.md`,
-renamed to match the rest of `docs/`. The brief itself is kept verbatim as
-[STEPSEQ-BRIEF.md](STEPSEQ-BRIEF.md); where this file and the brief disagree,
-this file is what got built and section 4 says why.
+The complete controls, installation, stock-kit macro setup, recording workflow,
+LED meanings and prototype limits are in the maintained
+[hands-on reference](HANDS-ON.md).
+See also [current local status](LOCAL-PROTOTYPE.md) and [CHANGELOG.md](../CHANGELOG.md).
+STEPSEQ-BRIEF.md is a historical build brief. The earlier STEPSEQ design text is
+preserved in [STEPSEQ-ORIGINAL.md](STEPSEQ-ORIGINAL.md).
 
-> **Status: running in Live on real hardware** (2026-08-31). Every value in
-> `MIDI_Map.py` is measured rather than assumed — section 5 has the table and
-> [HARDWARE.md](HARDWARE.md) has the method. The logic is also exercised by
-> `tools/stepseq_selftest.py` (no controller and no DAW required),
-> which is what makes a change safe to attempt without a Live restart.
->
-> Two things the first real session changed: the visible window now follows the
-> playhead, and the lane picker banks past its first sixteen pitches. Both were
-> found in minutes of use and neither was visible from the self-test — a
-> reminder of what running it actually buys you.
+## Controls
 
----
-
-## 1. What it does
-
-| Control | Focus view | Overview |
-|---|---|---|
-| Pads | toggle a 16th note in the current lane | toggle a step at (lane row, beat column) |
-| MOD + pad | select the lane, drum-rack layout | same, and scrolls the lane window to it |
-| `<` `>` | page through the steps by 16 | page four steps at a time |
-| MOD + `<` `>` | **bank the lane picker by 16 pitches** | same |
-| stop button | switch view | switch view |
-| play button | start/stop Live's transport | same |
-| Knob CC 20–23 | **unreachable on this hardware — see below** | same |
-
-**Three of the five buttons show state on their own LEDs** — play lit while the
-transport runs, the view button lit while you are in overview, the modifier lit
-while held. The arrows have no state to show and are never written.
-
-This needs the buttons' **feedback option turned ON in the M-Vave editor**. With
-it off the button lights from its own press and ignores the host, so the script's
-writes do nothing; with it on the button is dark unless something lights it, which
-is what this is for. `BUTTON_LEDS = False` in `MIDI_Map.py` turns it off again.
-
-Whether the button LEDs take the pad palette or are simply on/off is unmeasured —
-`BTN_LED_ON` is a velocity either way, so pick from the palette in
-[HARDWARE.md](HARDWARE.md) 3.2 if they turn out to be colour capable.
-
-**The window follows the playhead.** The sixteen pads show the sixteen steps
-being played, so a 16, 32 or 64-step loop needs no paging at all.
-
-Paging by hand stops the chase for a moment, because otherwise the next audio
-buffer yanks the view straight back and the arrow looks broken. It comes back on
-its own — **paging away is a peek at the current cycle, not a mode**:
-
-| What you do | What happens |
+| Gesture | Result |
 |---|---|
-| press `<` or `>` while playing | the view stays where you put it |
-| the loop comes round again | the chase resumes and the view snaps to the playhead |
-| page back onto the playing page | resumes immediately, without waiting |
-| stop the transport | resumes |
-
-So you can page away to edit steps 17–32 while 1–16 play, and at the top of the
-next loop the view returns to the music by itself. You never have to remember to
-re-arm it, and the wait is bounded by one cycle.
-
-`FOLLOW_RESUMES_ON_WRAP = False` makes a manual page stick until you page back or
-stop; `FOLLOW_PLAYHEAD = False` turns the whole thing off.
-
-**MOD is the record button** (`BTN_MOD`, note 119), held down. It is deliberately
-not called SHIFT: the device has a key physically labelled SHIFT which does
-something else entirely and transmits nothing at all
-([HARDWARE.md](HARDWARE.md) 6.1), so using that word for this button would put
-two unrelated things under one name in a codebase about this exact device.
-
-**The lane picker banks.** MOD + pad reaches sixteen pitches starting at
-`LANE_SELECT_BASE`, which is one bank of a drum rack. MOD + an arrow moves that
-base by 16, so all 128 pitches are reachable. The two end stops land on 0 and
-112 rather than on the `LANE_SELECT_BASE + 16k` series, and stepping back off a
-stop returns to the series — the picker tracks a bank index, not the base, so a
-trip to either end does not strand it.
-
-**The encoder CCs are not wired**, and freeing a knob bank would not change that.
-Encoder assignments are per preset, so this preset could carry its own CCs at no
-cost to the launcher ([HARDWARE.md 4.1](HARDWARE.md)) — but the encoders transmit
-on ports 1 and 2 and a Remote Script gets one input port, so those CCs would
-still never reach this script. Paint velocity and pattern length are settable in
-`MIDI_Map.py` or with the mouse. The handlers remain, and they work the moment a
-sibling script forwards to `handle_encoder_cc()`.
-
-Pad colours, from the measured palette ([HARDWARE.md 3.2](HARDWARE.md)):
-teal a step that holds a note · amber the playhead · white the playhead sitting
-on an active step · off everything else. In overview each lane row gets its own
-colour — green, red-pink, blue, purple — chosen to avoid both playhead colours,
-so a playhead column never reads as a lane.
-
-## 2. The three properties everything else hangs off
-
-**The clip is the only state.** The script stores no pattern. Steps are read
-from and written to the bound MIDI clip through the Live API. Ctrl+Z undoes a
-step edit, saving the set saves the pattern, a note drawn with the mouse lights
-up on the pads, and Live's own playback provides sample-accurate timing — the
-script never plays a note. None of that is implemented; all of it falls out of
-not keeping a copy.
-
-**One write path.** Both views funnel into `toggle_step(pitch, step_index)`. A
-view is a coordinate mapping and a render function, nothing more.
-
-**Listeners drive rendering, not the input handler.** Pressing a pad writes to
-the clip and returns. The clip's notes listener fires and redraws. That is why a
-pad press, a mouse edit and a Ctrl+Z produce identical LED updates, and it is
-why nothing writes to the clip during a render — the listener would feed itself.
-
-Three listeners: clip notes (redraw), clip playing position and status
-(playhead), song view selected-track and detail-clip (re-bind).
-
-## 3. How it renders
-
-`_refresh()` reads the clip into a 16-slot grid, once per change. `_paint()`
-overlays the playhead, diffs against a cache of what the device was last told,
-and sends only the pads that changed. The playhead listener fires per audio
-buffer and calls `_paint()` alone — no clip read, and no MIDI at all unless the
-step index actually changed. At 140 BPM that is about nine repaints a second,
-each one or two bytes triples.
-
-The diff is not just tidiness. Sending all 128 notes back to back overruns this
-device's MIDI input buffer and some pads silently never light
-([HARDWARE.md 3.5](HARDWARE.md)) — the bug that first presented as a dead pad.
-
-Two smaller decisions worth knowing:
-
-- **Note times are floored into steps, not rounded.** `remove_notes_extended()`
-  clears the half-open window `[t, t + STEP)`, so flooring is what makes "this
-  pad is lit" and "pressing this pad clears it" agree about a note that sits
-  slightly off the grid. Rounding to nearest would light a step whose window
-  does not contain the note, and pressing it would appear to do nothing.
-- **LEDs are always note-on.** This device ignores a real note-off entirely and
-  silently, so velocity 0 is the only "off" it understands
-  ([HARDWARE.md 3.3](HARDWARE.md)).
-
-## 4. Where the brief met the measured hardware
-
-The brief was written before [HARDWARE.md](HARDWARE.md) was consulted, and four
-of its Phase 0 assumptions are already contradicted by measurements in this
-repo. The architecture survived all four; the hardware constants did not.
-
-**The knobs are probably unreachable, and it is not a software problem.** The
-pads this preset uses are MCP-typed and so appear only on port 3, while the
-encoders appear only on ports 1 and 2 ([HARDWARE.md 1.1](HARDWARE.md)); no port
-carries both. A Remote Script gets exactly one input port.
-Encoder assignments *are* per preset — the two files in `reference/` differ at
-exactly encoder records 9 and 10, bank 2's first two ([HARDWARE.md 5.2](HARDWARE.md)) — so this preset
-could carry its own CC 20–23 without costing the launcher anything. What it
-cannot do is get them to this script: the encoders never appear on port 3, and a
-Remote Script gets one input port. The way in is a forward from the encoder
-script, not a different assignment.
-
-The sequencer works without any knob. Only paint velocity and pattern length
-become unreachable, and both have mouse equivalents in Live. If the knobs turn
-out to be worth having, `MVave_SMC_STEPSEQ.handle_encoder_cc()` is the way in: a
-sibling script on the encoder port can find the instance through the class-level
-`_active_instances` list and forward, which is exactly what `MVave_SMC_KNOBS`
-already does in the other direction to move the session box. That is a ten-line
-addition to the encoder script, not a redesign of this one.
-
-**There is no spare button to make SHIFT out of.** The device's own SHIFT key
-transmits nothing at all — it is consumed by the firmware for its Shift+Pad
-combinations ([HARDWARE.md 6.1](HARDWARE.md)). The five buttons above the grid
-are **per-preset**, and on this preset they send notes **117–121** on channel 1.
-Decoding the two exported presets settles it: the five button records read
-20, 21, 17, 18, 19 in `launchpad.spc` and 120, 121, 117, 118, 119 in
-`sequencer.spc`. The brief's "spare button as SHIFT, CC 104 on channel 16"
-became the record button — note **119**, channel 1.
-
-That in turn is why the script owns the play button. Claiming a port with a
-Control Surface disables Track, Sync and Remote on it
-([HARDWARE.md 1.4](HARDWARE.md)), so a button the script does not handle is a
-dead button while this preset is live. Five buttons, five jobs.
-
-**There is no dim.** The velocity byte sent to a pad is a palette index, not a
-brightness, and the palette is absolute — it overrides the colour the pad is
-configured with in the editor ([HARDWARE.md 3.1](HARDWARE.md)). "Step off = dim"
-is not available; off is off. `COLOR_STEP_EMPTY` and `COLOR_STEP_DOWNBEAT` exist
-for marking in-loop empty steps and default to 0, because every colour on this
-device is full brightness and a lit empty grid is loud. Try them once you can
-see the pads: quarter-note markers make 16 steps countable at a glance, which is
-what a dim white does on a Push.
-
-**Relative encoders here are centre-64, not two's complement.** The brief
-specified `delta = v if v < 64 else v - 128`. The two encoders switched to
-relative in the M-Vave editor were measured as 63 = one step back, 65 = one step
-forward ([HARDWARE.md 4.4](HARDWARE.md)). The two schemes are mutually
-ambiguous — 63 means +63 under one and −1 under the other — so this is a setting
-(`KNOB_MODE`) rather than something that can be detected. It defaults to the
-measured scheme.
-
-**One more, not a contradiction but a trap.** The brief calls this "preset 3".
-The `.spc` bank this repo already documents as **bank 3 is the clip launcher** —
-notes 1–16, hand-edited, the bank port 3 plays back
-([HARDWARE.md 5.2](HARDWARE.md)). The brief's preset numbering and the file's
-bank numbering are not known to line up. Confirm which bank you are editing
-before you program anything, or the first casualty is the clip launcher.
-
-## 5. Phase 0 — closed
-
-Everything the script assumed about the hardware has now been measured. Dates and
-method are in [HARDWARE.md](HARDWARE.md); this is what the sequencer depends on.
-
-| Question | Answer |
-|---|---|
-| Which port does the sequencer preset use? | **Port 3.** MCP-typed banks come out of port 3 — see [HARDWARE.md 5.6](HARDWARE.md), where the flag-byte-as-port-selector explanation is superseded and the confirming experiment is still unrun. |
-| What do the pads send? | **Notes 101–116, channel 1, fixed velocity 127.** A purpose-built port-3 bank. |
-| How are the LEDs addressed? | **The same notes the pads send**, on the same channel, out of `MIDIOUT3`. |
-| Can the two scripts share port 3? | **Yes.** Note range is the only separator — the clip launcher is 1–16, this is 101–116. Channel cannot separate them; both are channel 1. |
-| Do the five buttons work in this preset? | **Yes** — notes **117–121**, channel 1. They are per-preset, not global: the launcher's bank sends 17–21, this one sends 117–121. |
-| Do pads self-light on press? | **No.** Four rounds, ~78 strikes, no LED movement, and a host-set colour survives being struck. |
-| Does velocity select the LED colour? | **Yes**, an absolute palette index. Everything usable is below 64; 64–112 is one flat blue. |
-| How does a pad turn off? | **Note-on velocity 0.** A real note-off is ignored, silently. |
-| Do the encoders reach this script? | **No** — not directly. The encoders never appear on port 3, and this script owns port 3. Assignments are per preset, so the CCs are free; the port is the obstacle, and a forward from `MVave_SMC_KNOBS` is the way in. |
-
-**The one trade you cannot configure around**, and *why* — corrected 2026-08-31:
-this is not a device quirk but a consequence of the assignment type. **MCP
-assignments go to port 3, are fixed-velocity, and light. Plain MIDI assignments go
-to ports 1/2, are velocity-sensitive, and do not light.** MCU is a control
-protocol — on/off buttons, host-driven LEDs; MIDI notes are performance data —
-velocity, and no feedback path in the protocol at all. See
-[HARDWARE.md](HARDWARE.md) 5.6, where the confirming experiment is written up but
-not yet run.
-
-Concretely: only port-3 banks light their
-pads, and only port-3 banks are fixed-velocity. Banks on ports 1 and 2 are
-velocity-sensitive but could not be lit on any port, note range or channel tried.
-So a lit grid and per-step strike velocity are mutually exclusive on this device.
-`USE_STRIKE_VELOCITY` stays on and inert, correct the moment a device can do both.
-
-Still genuinely unknown, and neither blocks anything:
-
-| Question | Status |
-|---|---|
-| What does PAD BANK do in this preset? | **Narrowed.** The other seven banks are factory and byte-identical in both shipped presets; bank 7 carries notes **100–115**, which overlaps `PAD_NOTES` by 15 of 16 — so if those notes reached port 3, every pad would write a step one place off, silently. Bank 7's flag byte is `0x00`, which under 5.6's model routes it to ports 1/2 instead, so this rides on the unrun 5.6 experiment. |
-| Which velocities are actually teal and amber? | 20 and 15, named by eye by one observer. Swap them for whatever reads best on your unit. |
-
-The measurement tool is here if you need to redo any of it:
-`tools/mvave_probe.py --listen --port "SMC-PAD"` shows what every control sends
-with its port and channel, `--knobs` maps the encoders one at a time, and
-`--colours --note 1` walks the palette. [PROBE.md](PROBE.md) has the modes. Live
-must not be holding the port — Windows MIDI ports are exclusive.
-
-## 6. Installing
-
-Copy `MVave_SMC_STEPSEQ/` into Live's Remote Scripts directory alongside the other two
-(see [INSTALL.md](INSTALL.md) for the path), restart Live, and add a Control
-Surface slot for `MVave_SMC_STEPSEQ`. Live 11 or newer: the clip API this uses
-(`get_notes_extended`, `add_new_notes`, `remove_notes_extended`) does not exist
-before that, and the script says so in `Log.txt` rather than rendering an empty
-grid forever.
-
-**First, build the preset.** The sequencer needs its own port-3 pad bank, because
-the note range is the only thing that separates it from the clip launcher. In the
-M-Vave editor, make a **second preset** — a Shift+Pad slot, not a spare PAD BANK
-inside your existing one. The five buttons are one set per preset file (the
-`.spc` holds 5 button records against 128 pad records in 8 banks), so switching
-PAD BANK renumbers the pads and leaves the buttons on 17–21: the pads would work
-while MOD, the view toggle and both arrows stayed dead and drove the launcher's
-transport instead. `reference/sequencer.spc` **is** that preset, if your editor
-can load one. Give it:
-
-- **the same assignment *type* the clip-launcher bank uses: MCP / Mackie, not
-  plain MIDI.** The type is what puts a bank on port 3 and what makes its pads
-  light from the host; a bank assigned as plain MIDI notes comes out of ports
-  1/2, is velocity-sensitive, and does not light (HARDWARE.md 5.6). In the
-  `.spc` this shows up as the flag byte `0x04`, which is most likely just the
-  MCP marker — an earlier revision of this document called it a port or routing
-  option, which is the reading HARDWARE.md 5.6 superseded on 2026-08-31.
-- **notes 101–116**, channel 1, in screen reading order
-
-The editor numbers pads **bottom-up** — its PAD1 is the bottom-left pad — so its
-PAD13–16 carry the first four notes. Confirm with
-`run_probe.bat --listen --port "SMC-PAD"` before going further: you want notes
-101–116 on `MIDIIN3`, channel 1, and buttons 117–121 alongside them.
-
-**Then the Control Surface slot:**
-
-| | |
-|---|---|
-| Control Surface | `MVave_SMC_STEPSEQ` |
-| Input | `MIDIIN3 (SMC-PAD)` |
-| Output | `MIDIOUT3 (SMC-PAD)` |
-
-Both scripts sit on the same port and coexist because their note ranges do not
-overlap: 1–16 for the clip launcher, 101–116 here. Switching the pad preset on
-the device switches which one you are driving, with nothing to change in Live.
-
-**Both scripts can stay loaded.** They render LEDs on Live-side events whichever
-preset is active, but they write to disjoint note ranges — 1–21 and 101–121 —
-and lighting a note the active preset does not use does nothing (measured; see
-`LED_NOTES` in `MIDI_Map.py`). Neither can overwrite the other's pads, so the
-preset switch really is the mode switch, with nothing to change in Live. The one
-resource they share is the device's MIDI input buffer, and neither sends in
-bulk.
-
-On the port's MIDI Ports row set **Track = Off** if Live still lets you — a
-Control Surface disables Track/Sync/Remote on the port it claims (INSTALL.md §4,
-HARDWARE.md 1.4), so the switch may already be greyed out, in which case there is
-nothing to do and nothing is wrong. Notes 101–116 are real pitches
-near the top of the keyboard, and with Track on and a track armed, every step you
-toggle also plays a note through that instrument.
-
-Live's `Log.txt` is the only debugger inside Live. On load the script prints
-what it is listening for, verbatim:
-
-```
-MVave_SMC_STEPSEQ: loaded. pads ch 1 notes 101-116, buttons ch 1 notes 117-121.
-```
-
-It also logs anything it receives that `MIDI_Map.py` does not describe, once per
-signature — but **do not use that to find out what your unit sends.**
-`build_midi_map` forwards exactly the set `_dispatch` claims, and under Live's
-forward-only routing nothing else is ever delivered, so a preset sending the
-wrong notes produces no `unmapped:` line at all: the pads simply do nothing.
-`docs/DEVELOPMENT.md` records the same conclusion from a hardware session. For
-"what is this thing actually sending?", use `tools/mvave_probe.py --listen`,
-which reads the port directly.
-
-## 7. The self-test
-
-```
-python3 tools/stepseq_selftest.py -v
-```
-
-Runs the script against a fake Live on any machine, no controller and no DAW.
-It exists because Live has no hot reload: every change costs a full restart, and
-an exception inside a MIDI callback disables the script silently — the
-controller just stops responding and the only evidence is a traceback in
-`Log.txt`. Grid arithmetic is a punishing thing to debug through that loop.
-
-It covers the coordinate maps, the step bucketing, the write path, LED bytes and
-diffing, playhead gating, page clamping, re-binding, clip deletion, and the
-map file's own sanity. It cannot cover the hardware — note numbers, channels,
-the palette. That is section 5, on the device.
-
-## 8. Deliberately not built
-
-From the brief's own out-of-scope list: per-step velocity editing, aftertouch
-ratchets, swing and nudge, auto-creating a clip when none is selected, reading
-drum-rack pad names, note repeat, melodic and scale modes.
-
-**Auto-following the playhead was built after all** (2026-08-31). The brief had
-it as a nice-to-have defaulting to off, and this section previously argued that a
-feature off by default is a feature nobody has tried. Running the sequencer in
-Live for the first time settled it immediately: with a 32-step loop and a 16-pad
-grid, manual paging is the whole interaction, and following makes loop length
-stop mattering. It defaults to **on**.
-
-Per-step velocity is also implemented (`USE_STRIKE_VELOCITY`) but **inert on this
-hardware**: only port-3 banks light their pads, and only they are fixed-velocity.
-See [HARDWARE.md](HARDWARE.md) — the trade is a property of the device.
-
----
-
-## 9. To do
-
-### Every step is written at velocity 127
-
-The pads send a fixed 127 — MCP-typed banks are the only ones that light, and
-they are not velocity-sensitive (section 5). `USE_STRIKE_VELOCITY` is on, so that
-127 wins and `PAINT_VELOCITY` is never reached. A whole pattern therefore comes
-out at full scale: no ghost notes, no dynamics.
-
-The knob designed to fix this is `CC_VELOCITY`, and there is no encoder left to
-send it. All sixteen are device macros on both presets — the launcher spends its
-bottom pair on session navigation, the sequencer on macros 15 and 16.
-
-Three ways out, cheapest first:
-
-1. **`USE_STRIKE_VELOCITY = False`.** Steps then take `PAINT_VELOCITY`, a number
-   you can edit. Still uniform, but not full scale, and it is one line.
-2. **Draw the dynamics in Live afterwards** — which is what you would do for
-   ghost notes regardless.
-3. **Spend two macros — four steps, not one.** The device assignment alone is
-   not enough, because the encoders come out on ports 1/2 and this script owns
-   port 3. All four are needed: set `USE_STRIKE_VELOCITY = False` (otherwise the
-   fixed strike 127 wins and `CC_VELOCITY` cannot change a single written note);
-   assign CC 20/21 on the sequencer preset; add them to the forwarded set in
-   `MVave_SMC_KNOBS.build_midi_map`; and have that script's `receive_midi` call
-   `handle_encoder_cc(cc, value)` with the **raw** byte, before it subtracts
-   `CENTRE`.
-
-This matters more than a missing convenience. Flat velocity is exactly what made
-an earlier track in this project measure as dynamically dead, and velocity is the
-only dynamics lever available when the control API cannot write automation
-envelopes.
-
-### Constants describing controls that cannot exist
-
-`CC_LANE` (20), `CC_VELOCITY` (21), `CC_LENGTH` (22) and `CC_SPARE` (23) are
-unreachable for the same reason. Two of them are covered otherwise — lane
-selection by holding the modifier and pressing a pad, paging by the window
-following the playhead — so only velocity and pattern length are real losses.
-
-### Confirm the MCP-vs-MIDI experiment
-
-[HARDWARE.md](HARDWARE.md) 5.6 carries the leading explanation for why port,
-velocity and LEDs move together, with the single-variable experiment written out
-and not yet run.
+| Tap pad | Toggle a sixteenth-note step on release |
+| Hold active step(s) + knob | Lock a macro on those steps |
+| Hold active step(s) + Left/Right | Change chance: 25%, 50%, 75%, 100% |
+| Record + pad | Select drum and its Instrument Rack macros |
+| Pause/Stop + pad | Mute/unmute without deleting the pattern |
+| Hold Record or Pause/Stop | Drum state with cyan programmed-hit pulses |
+| Play | Toggle transport; stopping ends capture |
+| Record + Play | Toggle native real-time macro capture |
+| Left/Right alone | Switch Drum Rack tracks |
+| Record + Left/Right | Change drum bank by 16 pitches |
+| Pause/Stop + Left/Right | Page the pattern |
+
+Step order is top-left across/down; drum order is bottom-left across/up.
+Probability palette: 25% = 7, 50% = 21, 75% = 9, 100% = 64. Hold the pad while
+pressing arrows repeatedly. New steps default to 100%. Live owns the chance.
+The old four-lane overview remains internal for tests; Pause/Stop is mute mode.
+
+## Architecture and checks
+
+Clips own notes, chance and automation. Input handlers write; listeners redraw.
+Probability edits return the original MidiNoteVector to apply_note_modifications
+to preserve IDs and note data. The activity cache is rebuilt on render and read
+by the existing playhead callback, with half-step cyan pulses and no new timers.
+Only changed LED values are sent. Muted/probability-skipped notes still pulse;
+disabled notes do not. No actual audio/MIDI output detection is claimed.
+
+One Drum Rack per track is supported. The first direct Instrument Rack inside
+the selected pad is its macro target. Plain pads still sequence/mute but need
+that inner rack for macro control. Knob bank 1 gives eight controls in reading
+order. Tracks are pinned; track arrows do not launch or stop clips.
+
+Native recording uses Session Record and parameter gestures with temporary
+arming, restoration and idle-time automation resume. Curve/lock metadata remains
+session-only. The old custom recorder and scale/latch modes are archived.
+
+Run `python -m unittest discover -s tools -p "*selftest.py"` from the source:
+**185 tests pass**. Stubs cover sequencing, macros, recording, drum modes,
+probability and activity. Hardware sessions additionally confirmed smooth jamming.
